@@ -49,6 +49,22 @@ public class UserController {
                 userService.updateProfileByPhone(userDetails.getUsername(), request)));
     }
 
+    @GetMapping("/users/{id}")
+    @Operation(summary = "Get user by ID")
+    public ResponseEntity<ApiResponse<UserResponse>> getUserById(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success("User retrieved",
+                userService.getById(id)));
+    }
+
+    @PutMapping("/users/profile")
+    @Operation(summary = "Update profile by userId param")
+    public ResponseEntity<ApiResponse<UserResponse>> updateProfileById(
+            @RequestParam Long userId,
+            @Valid @RequestBody UserProfileUpdateRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Profile updated",
+                userService.updateProfile(userId, request)));
+    }
+
     @PostMapping("/admin")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Create a new admin")

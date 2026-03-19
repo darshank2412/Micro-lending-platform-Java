@@ -1,14 +1,13 @@
-
-        package com.darshan.lending.controller;
+package com.darshan.lending.controller;
 
 import com.darshan.lending.dto.*;
-        import com.darshan.lending.dto.BankAccountResponse;
+import com.darshan.lending.dto.BankAccountResponse;
 import com.darshan.lending.entity.KycDocument;
 import com.darshan.lending.entity.User;
 import com.darshan.lending.entity.enums.*;
-        import com.darshan.lending.repository.UserRepository;
+import com.darshan.lending.repository.UserRepository;
 import com.darshan.lending.service.*;
-        import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -19,7 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-        import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest
 @AutoConfigureMockMvc(addFilters = false)
@@ -132,7 +131,7 @@ class ControllerTest {
     @Test
     void openSavingsAccount_shouldReturn200() throws Exception {
         String body = String.format("{\"userId\":%d,\"productId\":%d}", testUser.getId(), savingsProductId);
-        mockMvc.perform(post("/accounts/savings/open")
+        mockMvc.perform(post("/accounts/savings")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.accountType").value("SAVINGS"));
@@ -141,7 +140,7 @@ class ControllerTest {
     @Test
     void openLoanAccount_shouldReturn200() throws Exception {
         String body = String.format("{\"userId\":%d,\"productId\":%d}", testUser.getId(), loanProductId);
-        mockMvc.perform(post("/accounts/loan/open")
+        mockMvc.perform(post("/accounts/loan")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.accountType").value("LOAN"));
