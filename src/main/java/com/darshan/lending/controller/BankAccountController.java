@@ -22,7 +22,7 @@ public class BankAccountController {
 
     private final BankAccountService bankAccountService;
 
-    @PostMapping("/savings/open")
+    @PostMapping("/savings")
     @Operation(summary = "Open savings account",
             description = "Links account to a SavingsProduct by productId. One savings account per user.")
     public ResponseEntity<ApiResponse<BankAccountResponse>> openSavings(
@@ -31,7 +31,7 @@ public class BankAccountController {
                 bankAccountService.openSavingsAccount(request.getUserId(), request.getProductId())));
     }
 
-    @PostMapping("/loan/open")
+    @PostMapping("/loan")
     @Operation(summary = "Open loan account",
             description = "Links account to a LoanProduct by productId. One loan account per user.")
     public ResponseEntity<ApiResponse<BankAccountResponse>> openLoan(

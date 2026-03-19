@@ -6,6 +6,7 @@ import com.darshan.lending.entity.BankAccount;
 import com.darshan.lending.entity.User;
 import com.darshan.lending.entity.enums.AccountStatus;
 import com.darshan.lending.entity.enums.AccountType;
+import com.darshan.lending.entity.enums.Role;
 import com.darshan.lending.entity.enums.UserStatus;
 import com.darshan.lending.exception.BusinessException;
 import com.darshan.lending.exception.ResourceNotFoundException;
@@ -20,6 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.Period;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +33,8 @@ public class UserService {
     private final BankAccountRepository bankAccountRepository;
     private final PasswordEncoder passwordEncoder;
 
+    // ── Registration ──────────────────────────────────────────────────────────
+
     @Transactional
     public UserResponse register(Long userId, UserRegistrationRequest req) {
 
@@ -37,21 +42,20 @@ public class UserService {
 
         if (user.getStatus() != UserStatus.MOBILE_VERIFIED) {
             throw new BusinessException(
-                    "User must be in MOBILE_VERIFIED status to register. Current: " + user.getStatus());
+                    "User must be in MOBILE_VERIFIED status to register. Current: "
+                            + user.getStatus());
         }
 
         if (userRepository.existsByPan(req.getPan())) {
             throw new BusinessException("PAN already registered: " + req.getPan());
         }
 
-        // 18+ age validation — service-layer safety net
         int age = Period.between(req.getDateOfBirth(), LocalDate.now()).getYears();
         if (age < 18) {
             throw new BusinessException(
-                    "User must be at least 18 years old to register. Age provided: " + age);
+                    "User must be at least 18 years old. Age provided: " + age);
         }
 
-        // Save address
         Address address = Address.builder()
                 .line1(req.getAddress().getLine1())
                 .city(req.getAddress().getCity())
@@ -61,7 +65,6 @@ public class UserService {
 
         String fullName = req.getFirstName() + " " + req.getLastName();
 
-        // Update user profile
         user.setFirstName(req.getFirstName());
         user.setLastName(req.getLastName());
         user.setPhoneNumber(req.getPhoneNumber());
@@ -93,7 +96,6 @@ public class UserService {
 
         bankAccountRepository.save(wallet);
 
-        // Final status update
         saved.setStatus(UserStatus.PLATFORM_ACCOUNT_CREATED);
         userRepository.save(saved);
 
@@ -101,6 +103,8 @@ public class UserService {
 
         return toResponse(saved);
     }
+
+    // ── Profile ───────────────────────────────────────────────────────────────
 
     @Transactional
     public UserResponse updateProfile(Long userId, UserProfileUpdateRequest req) {
@@ -119,7 +123,74 @@ public class UserService {
         return toResponse(findUserById(userId));
     }
 
+    // ── Admin Management ──────────────────────────────────────────────────────
+
+    @Transactional
+    public UserResponse createAdmin(CreateAdminRequest request) {
+
+        if (userRepository.existsByPhoneNumber(request.getPhoneNumber())) {
+            throw new BusinessException("Phone number already registered");
+        }
+
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new BusinessException("Email already registered");
+        }
+
+        User admin = User.builder()
+                .countryCode(request.getCountryCode())
+                .fullName(request.getFullName())
+                .email(request.getEmail())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .role(Role.ADMIN)
+                .status(UserStatus.PLATFORM_ACCOUNT_CREATED)
+                .phoneVerified(true)
+                .emailVerified(false)
+                .build();
+
+        admin.setPhoneNumber(request.getPhoneNumber());
+
+        userRepository.save(admin);
+
+        log.info("New admin created: phone={}", request.getPhoneNumber());
+
+        return toResponse(admin);
+    }
+
+    @Transactional
+    public void deleteAdmin(Long userId) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Admin not found: " + userId));
+
+        if (user.getRole() != Role.ADMIN) {
+            throw new BusinessException("User is not an admin");
+        }
+
+        long adminCount = userRepository.countByRole(Role.ADMIN);
+
+        if (adminCount <= 1) {
+            throw new BusinessException(
+                    "Cannot delete — at least one admin must exist at all times");
+        }
+
+        userRepository.delete(user);
+
+        log.info("Admin deleted: userId={}", userId);
+    }
+
+    public List<UserResponse> getAllAdmins() {
+
+        return userRepository.findAllByRole(Role.ADMIN)
+                .stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
     public User findUserById(Long userId) {
+
         return userRepository.findById(userId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("User not found: " + userId));
@@ -146,19 +217,51 @@ public class UserService {
         return UserResponse.builder()
                 .id(u.getId())
                 .countryCode(u.getCountryCode())
-                .phoneNumber(u.getPhoneNumber())
+                .mobileNumber(u.getPhoneNumber())
+                .firstName(u.getFirstName())
+                .lastName(u.getLastName())
                 .fullName(u.getFullName())
                 .email(u.getEmail())
+                .dateOfBirth(u.getDateOfBirth())
                 .gender(u.getGender())
                 .role(u.getRole())
                 .status(u.getStatus())
                 .kycStatus(u.getKycStatus())
-                .pan(u.getPan())
                 .incomeBracket(u.getIncomeBracket())
                 .p2pExperience(u.getP2pExperience())
+//                .emailVerified(u.getEmailVerified())
+//                .phoneVerified(u.getPhoneVerified())
                 .address(addressDto)
                 .platformAccountNumber(platformAccountNumber)
                 .createdAt(u.getCreatedAt())
                 .build();
+    }
+
+    @Transactional
+    public UserResponse updateProfileByPhone(String phoneNumber, UserProfileUpdateRequest req) {
+
+        User user = userRepository.findByPhoneNumber(phoneNumber)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("User not found with phone number: " + phoneNumber));
+
+        if (req.getFullName() != null) user.setFullName(req.getFullName());
+        if (req.getEmail() != null) user.setEmail(req.getEmail());
+        if (req.getGender() != null) user.setGender(req.getGender());
+
+        User savedUser = userRepository.save(user);
+
+        log.info("Profile updated for user phone={}", phoneNumber);
+
+        return toResponse(savedUser);
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponse getByPhone(String phoneNumber) {
+
+        User user = userRepository.findByPhoneNumber(phoneNumber)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("User not found with phone number: " + phoneNumber));
+
+        return toResponse(user);
     }
 }

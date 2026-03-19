@@ -4,6 +4,8 @@ import com.darshan.lending.dto.OtpRequest;
 import com.darshan.lending.dto.OtpVerifyRequest;
 import com.darshan.lending.entity.OtpVerification;
 import com.darshan.lending.entity.User;
+import com.darshan.lending.entity.enums.OtpPurpose;
+import com.darshan.lending.entity.enums.OtpType;
 import com.darshan.lending.entity.enums.UserStatus;
 import com.darshan.lending.exception.BusinessException;
 import com.darshan.lending.repository.OtpVerificationRepository;
@@ -26,12 +28,31 @@ public class OtpService {
     private static final int OTP_EXPIRY_MINUTES = 10;
     private static final SecureRandom RANDOM = new SecureRandom();
 
+    private static final String PHONE_REGEX = "^[6-9][0-9]{9}$";
+    private static final String EMAIL_REGEX = "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$";
+
     private final OtpVerificationRepository otpRepo;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
     public String sendOtp(OtpRequest request) {
+
+        // Validate identifier matches otpType
+        validateIdentifierMatchesOtpType(request.getIdentifier(), request.getOtpType());
+
+        // For PHONE type, countryCode is required
+        if (request.getOtpType() == OtpType.PHONE && (request.getCountryCode() == null || request.getCountryCode().isBlank())) {
+            throw new BusinessException("Country code is required for PHONE type OTP");
+        }
+
+        // Block registration OTP if user already exists
+        if (request.getPurpose() == OtpPurpose.REGISTRATION) {
+            boolean exists = userRepository.findByPhoneNumber(request.getIdentifier()).isPresent();
+            if (exists) {
+                throw new BusinessException("User already registered with " + request.getIdentifier() + ". Please login instead.");
+            }
+        }
 
         String otpCode = generateOtp();
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES);
@@ -54,6 +75,9 @@ public class OtpService {
 
     @Transactional
     public Long verifyOtpAndCreateUser(OtpVerifyRequest request) {
+
+        // Validate identifier matches otpType on verify too
+        validateIdentifierMatchesOtpType(request.getIdentifier(), request.getOtpType());
 
         Optional<OtpVerification> optOtp = otpRepo
                 .findTopByIdentifierAndOtpTypeAndPurposeAndVerifiedFalseOrderByCreatedAtDesc(
@@ -86,7 +110,7 @@ public class OtpService {
         User user = new User();
         user.setCountryCode(request.getCountryCode());
         user.setPhoneNumber(request.getIdentifier());
-        user.setPassword(passwordEncoder.encode(request.getIdentifier())); // default password = phone number
+        user.setPassword(passwordEncoder.encode(request.getIdentifier()));
         user.setPhoneVerified(true);
         user.setRole(request.getRole());
         user.setStatus(UserStatus.MOBILE_VERIFIED);
@@ -98,8 +122,23 @@ public class OtpService {
         return user.getId();
     }
 
+    private void validateIdentifierMatchesOtpType(String identifier, OtpType otpType) {
+        if (otpType == OtpType.PHONE) {
+            if (!identifier.matches(PHONE_REGEX)) {
+                throw new BusinessException(
+                        "Identifier must be a valid 10-digit Indian mobile number (starting with 6-9) when otpType is PHONE"
+                );
+            }
+        } else if (otpType == OtpType.EMAIL) {
+            if (!identifier.matches(EMAIL_REGEX)) {
+                throw new BusinessException(
+                        "Identifier must be a valid email address when otpType is EMAIL"
+                );
+            }
+        }
+    }
+
     private String generateOtp() {
         return String.format("%06d", RANDOM.nextInt(1_000_000));
     }
 }
-

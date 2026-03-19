@@ -68,5 +68,14 @@ public class UserRegistrationRequest {
     @NotNull(message = "Address is required")
     private AddressDto address;
 
+    @NotBlank(message = "Password is required")
+    @Pattern(
+            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?`~])[^\\s]{8,}$",
+            message = "Password must be at least 8 characters, contain at least one uppercase letter, one lowercase letter, one digit, one special character, and no spaces"
+    )
+    @Schema(
+            example = "Secure@123",
+            description = "Min 8 chars, must contain uppercase, lowercase, digit, special character, no spaces"
+    )
     private String password;
 }

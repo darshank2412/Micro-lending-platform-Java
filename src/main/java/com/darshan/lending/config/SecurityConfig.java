@@ -15,7 +15,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
-
 import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
@@ -31,56 +30,58 @@ public class SecurityConfig {
 
         http
                 .csrf(csrf -> csrf.disable())
-
-                .sessionManagement(sm ->
-                        sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
-
-                .exceptionHandling(ex ->
-                        ex.authenticationEntryPoint(customAuthEntryPoint())
-                )
-
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(customAuthEntryPoint()))
                 .authorizeHttpRequests(auth -> auth
 
-                        // Swagger
-                        .requestMatchers(
-                                "/swagger-ui/**",
-                                "/v3/api-docs/**",
-                                "/swagger-ui.html"
-                        ).permitAll()
-
-                        // OTP APIs
-                        .requestMatchers(
-                                "/auth/otp/send",
-                                "/auth/otp/verify"
-                        ).permitAll()
-
-                        // ✅ Registration (PUBLIC)
+                        // ── Public ───────────────────────────────────────────────────
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/auth/otp/send", "/auth/otp/verify").permitAll()
                         .requestMatchers(HttpMethod.POST, "/users/register").permitAll()
 
-                        // ===============================
-                        // ADMIN ONLY - Loan Products
-                        // ===============================
+                        // ── ADMIN ONLY — Loan Products ────────────────────────────────
                         .requestMatchers(HttpMethod.POST,   "/loan-products").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,    "/loan-products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/loan-products/**").hasRole("ADMIN")
 
-                        // ===============================
-                        // ADMIN ONLY - Savings Products
-                        // ===============================
+                        // ── ADMIN ONLY — Savings Products ─────────────────────────────
                         .requestMatchers(HttpMethod.POST,   "/savings-products").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,    "/savings-products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/savings-products/**").hasRole("ADMIN")
 
-                        // Everything else requires login
+                                // ── ADMIN ONLY — Admin Management ─────────────────────────────
+                                .requestMatchers(HttpMethod.POST,   "/admins").hasRole("ADMIN")
+                                .requestMatchers(HttpMethod.GET,    "/admins").hasRole("ADMIN")
+                                .requestMatchers(HttpMethod.DELETE, "/admins/**").hasRole("ADMIN")
+
+                                // ── ADMIN: Match a loan request ───────────────────────────────────────────
+                                .requestMatchers(HttpMethod.PATCH, "/loan-requests/*/match").hasRole("ADMIN")
+
+// ── LENDER: Accept a matched loan request ────────────────────────────────
+                                .requestMatchers(HttpMethod.PATCH, "/loan-requests/*/accept").hasRole("LENDER")
+
+                        // ── BORROWER ONLY — Loan Requests ─────────────────────────────
+                        .requestMatchers(HttpMethod.POST,  "/loan-requests").hasRole("BORROWER")
+                        .requestMatchers(HttpMethod.PATCH, "/loan-requests/*/cancel").hasRole("BORROWER")
+                        .requestMatchers(HttpMethod.GET,   "/loan-requests/my").hasRole("BORROWER")
+
+                        // ── ADMIN ONLY — Loan Request Management ──────────────────────
+                        .requestMatchers(HttpMethod.GET,   "/loan-requests").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/loan-requests/*/reject").hasRole("ADMIN")
+
+                        // ── LENDER ONLY — Lender Preferences ─────────────────────────
+                        .requestMatchers(HttpMethod.POST,  "/lender-preferences").hasRole("LENDER")
+                        .requestMatchers(HttpMethod.PATCH, "/lender-preferences/deactivate").hasRole("LENDER")
+                        .requestMatchers(HttpMethod.GET,   "/lender-preferences/my").hasRole("LENDER")
+
+                        // ── ADMIN ONLY — View All Lender Preferences ──────────────────
+                        .requestMatchers(HttpMethod.GET,   "/lender-preferences").hasRole("ADMIN")
+
+                        // ── Everything else requires login ────────────────────────────
                         .anyRequest().authenticated()
                 )
-
                 .userDetailsService(userDetailsService)
-
-                .httpBasic(basic ->
-                        basic.authenticationEntryPoint(customAuthEntryPoint())
-                );
+                .httpBasic(basic -> basic.authenticationEntryPoint(customAuthEntryPoint()));
 
         return http.build();
     }
@@ -101,14 +102,13 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    // Optional: Print users at startup (for debugging)
+    // Debug: print all users at startup
     @Bean
     CommandLineRunner printUsers(UserRepository repo) {
         return args -> {
-            repo.findAll().forEach(user -> {
-                System.out.println("USER FOUND -> Phone: " + user.getPhoneNumber() +
-                        " | Role: " + user.getRole());
-            });
+            repo.findAll().forEach(user ->
+                    System.out.println("USER FOUND -> Phone: " + user.getPhoneNumber()
+                            + " | Role: " + user.getRole()));
         };
     }
 }

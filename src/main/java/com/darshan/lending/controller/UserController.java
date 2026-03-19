@@ -1,9 +1,6 @@
 package com.darshan.lending.controller;
 
-import com.darshan.lending.dto.ApiResponse;
-import com.darshan.lending.dto.UserProfileUpdateRequest;
-import com.darshan.lending.dto.UserRegistrationRequest;
-import com.darshan.lending.dto.UserResponse;
+import com.darshan.lending.dto.*;
 import com.darshan.lending.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -11,38 +8,69 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
-@RequestMapping("/users")
 @RequiredArgsConstructor
 @Tag(name = "User APIs", description = "User onboarding and profile management")
-@SecurityRequirement(name = "bearerAuth")
+@SecurityRequirement(name = "basicAuth")
 public class UserController {
 
     private final UserService userService;
 
     @PostMapping("/register")
-    @Operation(summary = "Complete registration after OTP verification",
-            description = "Saves profile (firstName, lastName, DOB, phone, gender, role, PAN, income), " +
-                    "address, and auto-creates a platform wallet. Returns the account number.")
+    @Operation(summary = "Complete registration")
     public ResponseEntity<ApiResponse<UserResponse>> register(
             @RequestParam Long userId,
             @Valid @RequestBody UserRegistrationRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Registration successful", userService.register(userId, request)));
+        return ResponseEntity.ok(ApiResponse.success("Registration successful",
+                userService.register(userId, request)));
     }
 
-    @PutMapping("/profile")
-    @Operation(summary = "Update user profile (partial)", description = "Only fullName, email, gender are updatable")
+    @GetMapping("/me")
+    @Operation(summary = "Get my profile")
+    public ResponseEntity<ApiResponse<UserResponse>> getMyProfile(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.success("User profile retrieved",
+                userService.getByPhone(userDetails.getUsername())));
+    }
+
+    @PutMapping("/me")
+    @Operation(summary = "Update my profile")
     public ResponseEntity<ApiResponse<UserResponse>> updateProfile(
-            @RequestParam Long userId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody UserProfileUpdateRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Profile updated", userService.updateProfile(userId, request)));
+        return ResponseEntity.ok(ApiResponse.success("Profile updated",
+                userService.updateProfileByPhone(userDetails.getUsername(), request)));
     }
 
-    @GetMapping("/{userId}")
-    @Operation(summary = "Get user by ID")
-    public ResponseEntity<ApiResponse<UserResponse>> getUser(@PathVariable Long userId) {
-        return ResponseEntity.ok(ApiResponse.success("User found", userService.getById(userId)));
+    @PostMapping("/admin")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Create a new admin")
+    public ResponseEntity<ApiResponse<UserResponse>> createAdmin(
+            @Valid @RequestBody CreateAdminRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Admin created",
+                userService.createAdmin(request)));
+    }
+
+    @GetMapping("/admin")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "List all admins")
+    public ResponseEntity<ApiResponse<List<UserResponse>>> getAllAdmins() {
+        return ResponseEntity.ok(ApiResponse.success("Admins retrieved",
+                userService.getAllAdmins()));
+    }
+
+    @DeleteMapping("/admin/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Delete an admin")
+    public ResponseEntity<ApiResponse<Void>> deleteAdmin(@PathVariable Long id) {
+        userService.deleteAdmin(id);
+        return ResponseEntity.ok(ApiResponse.success("Admin deleted", null));
     }
 }

@@ -15,31 +15,42 @@ public class LoanProductRequest {
     private String name;
 
     @NotNull(message = "Min amount is required")
-    @DecimalMin(value = "1000.00", message = "Min loan amount must be at least 1000")
+    @DecimalMin(value = "1000.00", message = "Min loan amount must be at least Rs.1,000")
+    @DecimalMax(value = "5000000.00", message = "Max loan amount cannot exceed Rs.50,00,000")
+    @Digits(integer = 13, fraction = 2, message = "Amount supports up to 13 integer digits and 2 decimal places")
     @Schema(example = "10000.00")
     private BigDecimal minAmount;
 
     @NotNull(message = "Max amount is required")
+    @DecimalMin(value = "1000.00", message = "Min loan amount must be at least Rs.1,000")
+    @DecimalMax(value = "5000000.00", message = "Max loan amount cannot exceed Rs.50,00,000")
+    @Digits(integer = 13, fraction = 2, message = "Amount supports up to 13 integer digits and 2 decimal places")
     @Schema(example = "500000.00")
     private BigDecimal maxAmount;
 
     @NotNull(message = "Min interest is required")
-    @DecimalMin(value = "0.00", inclusive = true, message = "Interest rate cannot be negative")
-    @Schema(example = "8.50")
+    @DecimalMin(value = "8.00", message = "Interest rate cannot be less than 8%")
+    @DecimalMax(value = "24.00", message = "Interest rate cannot exceed 24%")
+    @Digits(integer = 3, fraction = 2, message = "Interest rate supports up to 3 integer digits and 2 decimal places")
+    @Schema(example = "8.00")
     private BigDecimal minInterest;
 
     @NotNull(message = "Max interest is required")
-    @DecimalMax(value = "36.00", message = "Interest rate cannot exceed 36%")
+    @DecimalMin(value = "8.00", message = "Interest rate cannot be less than 8%")
+    @DecimalMax(value = "24.00", message = "Interest rate cannot exceed 24%")
+    @Digits(integer = 3, fraction = 2, message = "Interest rate supports up to 3 integer digits and 2 decimal places")
     @Schema(example = "24.00")
     private BigDecimal maxInterest;
 
     @NotNull(message = "Min tenure is required")
-    @Min(value = 1, message = "Min tenure must be at least 1 month")
+    @Min(value = 6, message = "Min tenure must be at least 6 months")
+    @Max(value = 60, message = "Max tenure cannot exceed 60 months")
     @Schema(example = "6")
     private Integer minTenure;
 
     @NotNull(message = "Max tenure is required")
-    @Max(value = 360, message = "Max tenure cannot exceed 360 months")
+    @Min(value = 6, message = "Min tenure must be at least 6 months")
+    @Max(value = 60, message = "Max tenure cannot exceed 60 months")
     @Schema(example = "60")
     private Integer maxTenure;
 }

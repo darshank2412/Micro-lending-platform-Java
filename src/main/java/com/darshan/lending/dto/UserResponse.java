@@ -15,18 +15,14 @@ public class UserResponse {
     private String lastName;
     private String fullName;
     private String email;
-    private String phoneNumber;
     private LocalDate dateOfBirth;
     private Gender gender;
     private Role role;
     private UserStatus status;
     private KycStatus kycStatus;
-    private String pan;
     private String incomeBracket;
     private P2pExperience p2pExperience;
-    private Boolean emailVerified;
-    private Boolean phoneVerified;
     private AddressDto address;
-    private String platformAccountNumber;  // auto-generated on registration
+    private String platformAccountNumber;
     private LocalDateTime createdAt;
 }
