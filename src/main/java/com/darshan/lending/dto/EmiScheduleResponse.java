@@ -8,14 +8,22 @@ import java.time.LocalDate;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class EmiScheduleResponse {
-    private Long id;
-    private Long loanSummaryId;
-    private Integer emiNumber;
-    private LocalDate dueDate;
-    private LocalDate paidDate;
-    private BigDecimal emiAmount;
-    private BigDecimal principalComponent;
-    private BigDecimal interestComponent;
-    private BigDecimal outstandingPrincipal;
-    private EmiStatus status;
+
+    private Long        id;
+    private Long        loanSummaryId;
+    private Integer     emiNumber;
+    private LocalDate   dueDate;
+    private LocalDate   paidDate;
+    private BigDecimal  emiAmount;
+    private BigDecimal  principalComponent;
+    private BigDecimal  interestComponent;
+    private BigDecimal  outstandingPrincipal;
+    private EmiStatus   status;
+
+    // ── Populated only on pay-emi response ───────────────────────────────
+    /** Late penalty charged (0 if paid within grace period) */
+    private BigDecimal  penaltyAmount;
+
+    /** emiAmount + penaltyAmount actually debited */
+    private BigDecimal  totalPaid;
 }

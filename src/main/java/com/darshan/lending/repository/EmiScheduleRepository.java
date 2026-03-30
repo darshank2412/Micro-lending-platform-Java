@@ -10,28 +10,44 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface EmiScheduleRepository extends JpaRepository<EmiSchedule, Long> {
 
     List<EmiSchedule> findByLoanSummaryIdOrderByEmiNumberAsc(Long loanSummaryId);
 
-    /** Next unpaid EMI for a loan */
-    @Query(value = "SELECT e FROM EmiSchedule e WHERE e.loanSummary.id = :loanSummaryId " +
-            "AND e.status = :status ORDER BY e.emiNumber ASC")
+    /**
+     * All unpaid EMIs for a loan — PENDING or OVERDUE — ordered by EMI number.
+     * Used by pay-emi and foreclosure to find what's left to pay.
+     */
+    @Query("SELECT e FROM EmiSchedule e " +
+            "WHERE e.loanSummary.id = :loanSummaryId " +
+            "AND e.status IN (com.darshan.lending.entity.enums.EmiStatus.PENDING, " +
+            "                 com.darshan.lending.entity.enums.EmiStatus.OVERDUE) " +
+            "ORDER BY e.emiNumber ASC")
+    List<EmiSchedule> findPendingOrOverdueEmis(
+            @Param("loanSummaryId") Long loanSummaryId);
+
+    /**
+     * Only PENDING EMIs — used internally when overdue marking hasn't run yet.
+     * Kept for backward compatibility.
+     */
+    @Query("SELECT e FROM EmiSchedule e " +
+            "WHERE e.loanSummary.id = :loanSummaryId " +
+            "AND e.status = :status " +
+            "ORDER BY e.emiNumber ASC")
     List<EmiSchedule> findPendingEmis(
             @Param("loanSummaryId") Long loanSummaryId,
             @Param("status") EmiStatus status);
 
-    /** All overdue EMIs — due date passed and still PENDING */
-    @Query("SELECT e FROM EmiSchedule e WHERE e.dueDate < :today " +
-            "AND e.status = :status")
+    /** All overdue EMIs system-wide — used by the scheduler */
+    @Query("SELECT e FROM EmiSchedule e " +
+            "WHERE e.dueDate < :today AND e.status = :status")
     List<EmiSchedule> findOverdueEmis(
             @Param("today") LocalDate today,
             @Param("status") EmiStatus status);
 
-    /** Bulk mark overdue */
+    /** Bulk mark overdue — called daily by OverdueMonitoringJob */
     @Modifying
     @Query("UPDATE EmiSchedule e SET e.status = :newStatus " +
             "WHERE e.dueDate < :today AND e.status = :oldStatus")
@@ -41,8 +57,8 @@ public interface EmiScheduleRepository extends JpaRepository<EmiSchedule, Long> 
             @Param("newStatus") EmiStatus newStatus);
 
     /** Count paid EMIs for a loan */
-    @Query("SELECT COUNT(e) FROM EmiSchedule e WHERE e.loanSummary.id = :loanSummaryId " +
-            "AND e.status = :status")
+    @Query("SELECT COUNT(e) FROM EmiSchedule e " +
+            "WHERE e.loanSummary.id = :loanSummaryId AND e.status = :status")
     int countPaidEmis(
             @Param("loanSummaryId") Long loanSummaryId,
             @Param("status") EmiStatus status);
