@@ -37,7 +37,7 @@ public class SecurityConfig {
                         // ── Public ───────────────────────────────────────────────────
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/auth/otp/send", "/auth/otp/verify").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/users/register").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/register").permitAll()
 
                         // ── ADMIN ONLY — Loan Products ────────────────────────────────
                         .requestMatchers(HttpMethod.POST,   "/loan-products").hasRole("ADMIN")

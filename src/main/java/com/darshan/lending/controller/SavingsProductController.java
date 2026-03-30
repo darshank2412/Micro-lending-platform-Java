@@ -18,7 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/savings-products")
 @RequiredArgsConstructor
-@Tag(name = "Savings Product APIs", description = "Savings product CRUD — minBalance must be less than maxBalance")
+@Tag(name = "06.Savings Product APIs", description = "Savings product CRUD — minBalance must be less than maxBalance")
 public class SavingsProductController {
 
     private final SavingsProductService savingsProductService;

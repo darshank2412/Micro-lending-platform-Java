@@ -18,7 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/lender-preferences")
 @RequiredArgsConstructor
-@Tag(name = "Lender Preference APIs", description = "Lender sets preferences per loan product for matchmaking")
+@Tag(name = "07.Lender Preference APIs", description = "Lender sets preferences per loan product for matchmaking")
 @SecurityRequirement(name = "basicAuth")
 public class LenderPreferenceController {
 

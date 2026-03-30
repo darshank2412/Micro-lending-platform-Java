@@ -18,7 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/loan-products")
 @RequiredArgsConstructor
-@Tag(name = "Loan Product APIs", description = "Loan product CRUD — minAmount < maxAmount, minInterest < maxInterest, minTenure < maxTenure")
+@Tag(name = "05.Loan Product APIs", description = "Loan product CRUD — minAmount < maxAmount, minInterest < maxInterest, minTenure < maxTenure")
 public class LoanProductController {
 
     private final LoanProductService loanProductService;

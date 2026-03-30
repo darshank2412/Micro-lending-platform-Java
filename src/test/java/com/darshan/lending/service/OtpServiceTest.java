@@ -49,9 +49,7 @@ class OtpServiceTest {
                 .identifier("8888877777").otpType(OtpType.PHONE)
                 .purpose(OtpPurpose.REGISTRATION).countryCode("+91").build());
         Long userId = otpService.verifyOtpAndCreateUser(OtpVerifyRequest.builder()
-                .identifier("8888877777").otpCode(otp)
-                .otpType(OtpType.PHONE).purpose(OtpPurpose.REGISTRATION)
-                .countryCode("+91").role(Role.BORROWER).build());
+                .identifier("8888877777").otpCode(otp).build());
         assertNotNull(userId);
         assertTrue(userRepository.findById(userId).isPresent());
     }
@@ -62,9 +60,7 @@ class OtpServiceTest {
                 .identifier("9876543210").otpType(OtpType.PHONE)
                 .purpose(OtpPurpose.LOGIN).countryCode("+91").build());
         Long userId = otpService.verifyOtpAndCreateUser(OtpVerifyRequest.builder()
-                .identifier("9876543210").otpCode(otp)
-                .otpType(OtpType.PHONE).purpose(OtpPurpose.LOGIN)
-                .countryCode("+91").role(Role.BORROWER).build());
+                .identifier("9876543210").otpCode(otp).build());
         assertEquals(testUser.getId(), userId);
     }
 
@@ -72,10 +68,8 @@ class OtpServiceTest {
     void verifyOtp_shouldFailWhenNoPendingOtp() {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> otpService.verifyOtpAndCreateUser(OtpVerifyRequest.builder()
-                        .identifier("9000000000")  // ← valid phone, no OTP sent
-                        .otpCode("123456")
-                        .otpType(OtpType.PHONE).purpose(OtpPurpose.REGISTRATION)
-                        .countryCode("+91").role(Role.BORROWER).build()));
+                        .identifier("9000000000")
+                        .otpCode("123456").build()));
         assertTrue(ex.getMessage().contains("No pending OTP found"));
     }
 
@@ -86,9 +80,7 @@ class OtpServiceTest {
                 .purpose(OtpPurpose.REGISTRATION).countryCode("+91").build());
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> otpService.verifyOtpAndCreateUser(OtpVerifyRequest.builder()
-                        .identifier("7777766666").otpCode("000000")
-                        .otpType(OtpType.PHONE).purpose(OtpPurpose.REGISTRATION)
-                        .countryCode("+91").role(Role.BORROWER).build()));
+                        .identifier("7777766666").otpCode("000000").build()));
         assertTrue(ex.getMessage().contains("Invalid OTP"));
     }
 }

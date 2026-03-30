@@ -38,15 +38,12 @@ public class OtpService {
     @Transactional
     public String sendOtp(OtpRequest request) {
 
-        // Validate identifier matches otpType
         validateIdentifierMatchesOtpType(request.getIdentifier(), request.getOtpType());
 
-        // For PHONE type, countryCode is required
         if (request.getOtpType() == OtpType.PHONE && (request.getCountryCode() == null || request.getCountryCode().isBlank())) {
             throw new BusinessException("Country code is required for PHONE type OTP");
         }
 
-        // Block registration OTP if user already exists
         if (request.getPurpose() == OtpPurpose.REGISTRATION) {
             boolean exists = userRepository.findByPhoneNumber(request.getIdentifier()).isPresent();
             if (exists) {
@@ -62,6 +59,7 @@ public class OtpService {
                 .otpCode(otpCode)
                 .otpType(request.getOtpType())
                 .purpose(request.getPurpose())
+                .countryCode(request.getCountryCode())
                 .expiresAt(expiresAt)
                 .verified(false)
                 .build();
@@ -76,14 +74,9 @@ public class OtpService {
     @Transactional
     public Long verifyOtpAndCreateUser(OtpVerifyRequest request) {
 
-        // Validate identifier matches otpType on verify too
-        validateIdentifierMatchesOtpType(request.getIdentifier(), request.getOtpType());
-
         Optional<OtpVerification> optOtp = otpRepo
-                .findTopByIdentifierAndOtpTypeAndPurposeAndVerifiedFalseOrderByCreatedAtDesc(
-                        request.getIdentifier(),
-                        request.getOtpType(),
-                        request.getPurpose());
+                .findTopByIdentifierAndVerifiedFalseOrderByCreatedAtDesc(
+                        request.getIdentifier());
 
         OtpVerification otp = optOtp.orElseThrow(() ->
                 new BusinessException("No pending OTP found for " + request.getIdentifier()));
@@ -102,17 +95,15 @@ public class OtpService {
         log.info("OTP verified for identifier={}", request.getIdentifier());
 
         Optional<User> existingUser = userRepository.findByPhoneNumber(request.getIdentifier());
-
         if (existingUser.isPresent()) {
             return existingUser.get().getId();
         }
 
         User user = new User();
-        user.setCountryCode(request.getCountryCode());
+        user.setCountryCode(otp.getCountryCode());
         user.setPhoneNumber(request.getIdentifier());
         user.setPassword(passwordEncoder.encode(request.getIdentifier()));
         user.setPhoneVerified(true);
-        user.setRole(request.getRole());
         user.setStatus(UserStatus.MOBILE_VERIFIED);
 
         userRepository.save(user);

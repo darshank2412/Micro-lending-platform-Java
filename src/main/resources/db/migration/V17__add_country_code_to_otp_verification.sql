@@ -1,0 +1,1 @@
+ALTER TABLE otp_verification ADD COLUMN IF NOT EXISTS country_code VARCHAR(5);

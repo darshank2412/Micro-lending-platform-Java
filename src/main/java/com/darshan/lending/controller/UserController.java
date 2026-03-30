@@ -17,7 +17,7 @@ import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@Tag(name = "User APIs", description = "User onboarding and profile management")
+@Tag(name = "02.User APIs", description = "User onboarding and profile management")
 @SecurityRequirement(name = "basicAuth")
 public class UserController {
 

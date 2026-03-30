@@ -17,7 +17,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/accounts")
 @RequiredArgsConstructor
-@Tag(name = "Bank Account APIs", description = "Open savings/loan accounts linked to products, deposit and withdraw")
+@Tag(name = "04.Bank Account APIs", description = "Open savings/loan accounts linked to products, deposit and withdraw")
 public class BankAccountController {
 
     private final BankAccountService bankAccountService;

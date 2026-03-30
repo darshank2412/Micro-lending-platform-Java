@@ -22,7 +22,7 @@ public class OtpVerification {
     private Long id;
 
     @Column(name = "identifier", nullable = false)
-    private String identifier; // phone or email
+    private String identifier;
 
     @Column(name = "otp_code", nullable = false, length = 6)
     private String otpCode;
@@ -34,6 +34,9 @@ public class OtpVerification {
     @Enumerated(EnumType.STRING)
     @Column(name = "purpose", nullable = false, length = 20)
     private OtpPurpose purpose;
+
+    @Column(name = "country_code", length = 5)
+    private String countryCode;
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;

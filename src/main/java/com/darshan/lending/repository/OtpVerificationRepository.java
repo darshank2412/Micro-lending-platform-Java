@@ -9,6 +9,5 @@ import java.util.Optional;
 
 public interface OtpVerificationRepository extends JpaRepository<OtpVerification, Long> {
 
-    Optional<OtpVerification> findTopByIdentifierAndOtpTypeAndPurposeAndVerifiedFalseOrderByCreatedAtDesc(
-            String identifier, OtpType otpType, OtpPurpose purpose);
-}
+
+    Optional<OtpVerification> findTopByIdentifierAndVerifiedFalseOrderByCreatedAtDesc(String identifier);}

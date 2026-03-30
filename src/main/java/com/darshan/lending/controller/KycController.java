@@ -17,7 +17,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/kyc")
 @RequiredArgsConstructor
-@Tag(name = "KYC APIs", description = "KYC document submission and verification")
+@Tag(name = "03.KYC APIs", description = "KYC document submission and verification")
 @SecurityRequirement(name = "bearerAuth")
 public class KycController {
 

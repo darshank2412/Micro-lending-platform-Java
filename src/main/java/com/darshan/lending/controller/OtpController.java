@@ -17,7 +17,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/auth/otp")
 @RequiredArgsConstructor
-@Tag(name = "OTP APIs", description = "OTP generation and verification")
+@Tag(name = "01.OTP APIs", description = "OTP generation and verification")
 public class OtpController {
 
     private final OtpService otpService;
