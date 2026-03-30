@@ -1,6 +1,5 @@
 package com.darshan.lending.scheduler;
 
-import com.darshan.lending.entity.LoanSummary;
 import com.darshan.lending.entity.enums.EmiStatus;
 import com.darshan.lending.entity.enums.LoanStatus;
 import com.darshan.lending.repository.EmiScheduleRepository;
@@ -12,7 +11,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.List;
 
 @Component
 @RequiredArgsConstructor
@@ -22,6 +20,13 @@ public class OverdueMonitoringJob {
     private final EmiScheduleRepository emiScheduleRepository;
     private final LoanSummaryRepository loanSummaryRepository;
 
+    /**
+     * Runs every day at midnight.
+     *
+     * Step 1 — Bulk mark all past-due PENDING EMIs as OVERDUE in one UPDATE query.
+     * Step 2 — Bulk mark any ACTIVE loan that now has at least one OVERDUE EMI as DEFAULTED.
+     *          Uses a single JOIN query — no N+1 loop.
+     */
     @Scheduled(cron = "0 0 0 * * *")
     @Transactional
     public void markOverdueEmis() {
@@ -29,29 +34,17 @@ public class OverdueMonitoringJob {
         LocalDate today = LocalDate.now();
         log.info("OverdueMonitoringJob started for date: {}", today);
 
-        // 1. Bulk mark all overdue EMIs in one query
+        // ── Step 1: bulk flip PENDING → OVERDUE ───────────────────────────
         int overdueCount = emiScheduleRepository.markOverdueEmis(
                 today, EmiStatus.PENDING, EmiStatus.OVERDUE);
         log.info("Marked {} EMIs as OVERDUE", overdueCount);
 
-        // 2. Find all ACTIVE loans and check if any have overdue EMIs
+        // ── Step 2: bulk flip ACTIVE loans → DEFAULTED ────────────────────
         if (overdueCount > 0) {
-            List<LoanSummary> activeLoans =
-                    loanSummaryRepository.findByStatus(LoanStatus.ACTIVE);
-
-            for (LoanSummary loan : activeLoans) {
-                boolean hasOverdue = emiScheduleRepository
-                        .findOverdueEmis(today, EmiStatus.OVERDUE)
-                        .stream()
-                        .anyMatch(e -> e.getLoanSummary().getId().equals(loan.getId()));
-
-                if (hasOverdue) {
-                    loan.setStatus(LoanStatus.DEFAULTED);
-                    loanSummaryRepository.save(loan);
-                    log.warn("Loan DEFAULTED: loanSummaryId={} borrower={}",
-                            loan.getId(), loan.getBorrower().getId());
-                }
-            }
+            int defaultedCount = loanSummaryRepository
+                    .markLoansWithOverdueEmisAsDefaulted(LoanStatus.ACTIVE,
+                            LoanStatus.DEFAULTED, EmiStatus.OVERDUE);
+            log.warn("Marked {} loans as DEFAULTED", defaultedCount);
         }
 
         log.info("OverdueMonitoringJob completed");
