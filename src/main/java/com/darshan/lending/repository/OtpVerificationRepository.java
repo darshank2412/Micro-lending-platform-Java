@@ -10,4 +10,14 @@ import java.util.Optional;
 public interface OtpVerificationRepository extends JpaRepository<OtpVerification, Long> {
 
 
-    Optional<OtpVerification> findTopByIdentifierAndVerifiedFalseOrderByCreatedAtDesc(String identifier);}
+    Optional<OtpVerification> findTopByIdentifierAndVerifiedFalseOrderByCreatedAtDesc(
+            String identifier);
+
+    Optional<OtpVerification> findTopByIdentifierAndPurposeAndVerifiedTrueOrderByCreatedAtDesc(
+            String identifier, OtpPurpose purpose);
+}
+
+
+
+
+

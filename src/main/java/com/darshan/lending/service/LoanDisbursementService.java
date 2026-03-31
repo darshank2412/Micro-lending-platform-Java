@@ -25,29 +25,20 @@ import java.util.stream.Collectors;
 @Slf4j
 public class LoanDisbursementService {
 
-    private final LoanOfferRepository    loanOfferRepository;
-    private final LoanRequestRepository  loanRequestRepository;
-    private final LoanSummaryRepository  loanSummaryRepository;
-    private final EmiScheduleRepository  emiScheduleRepository;
-    private final BankAccountRepository  bankAccountRepository;
-    private final UserRepository         userRepository;
-    private final EmiCalculator          emiCalculator;
+    private final LoanOfferRepository   loanOfferRepository;
+    private final LoanRequestRepository loanRequestRepository;
+    private final LoanSummaryRepository loanSummaryRepository;
+    private final EmiScheduleRepository emiScheduleRepository;
+    private final BankAccountRepository bankAccountRepository;
+    private final UserRepository        userRepository;
+    private final EmiCalculator         emiCalculator;
 
     /**
      * ADMIN — Disburse a loan for an ACCEPTED offer.
-     *
-     * Steps:
-     * 1. Validate offer is ACCEPTED
-     * 2. Check lender has enough balance
-     * 3. Debit lender account, credit borrower account
-     * 4. Create LoanSummary
-     * 5. Generate full EMI schedule (amortization table)
-     * 6. Transition LoanRequest → DISBURSED
      */
     @Transactional
     public LoanSummaryResponse disburseLoan(Long offerId) {
 
-        // 1. Load and validate offer
         LoanOffer offer = loanOfferRepository.findById(offerId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Loan offer not found: " + offerId));
@@ -57,18 +48,16 @@ public class LoanDisbursementService {
                     "Only ACCEPTED offers can be disbursed. Current: " + offer.getStatus());
         }
 
-        // Check not already disbursed
         if (loanSummaryRepository.findByLoanOfferId(offerId).isPresent()) {
             throw new BusinessException("Loan already disbursed for offer: " + offerId);
         }
 
-        User borrower = offer.getLoanRequest().getBorrower();
-        User lender   = offer.getLender();
+        User borrower     = offer.getLoanRequest().getBorrower();
+        User lender       = offer.getLender();
         BigDecimal amount = offer.getLoanAmount();
         BigDecimal annualRate = offer.getOfferedInterestRate();
-        int tenure = offer.getLoanRequest().getTenureMonths();
+        int tenure        = offer.getLoanRequest().getTenureMonths();
 
-        // 2. Find lender and borrower bank accounts
         BankAccount lenderAccount = bankAccountRepository
                 .findByUserIdAndAccountType(lender.getId(), AccountType.SAVINGS)
                 .orElseThrow(() -> new BusinessException(
@@ -79,20 +68,17 @@ public class LoanDisbursementService {
                 .orElseThrow(() -> new BusinessException(
                         "Borrower does not have a savings account"));
 
-        // 3. Check lender has sufficient balance
         if (lenderAccount.getBalance().compareTo(amount) < 0) {
             throw new BusinessException(
                     "Lender has insufficient balance. Available: "
                             + lenderAccount.getBalance() + ", Required: " + amount);
         }
 
-        // 4. Debit lender, Credit borrower
         lenderAccount.setBalance(lenderAccount.getBalance().subtract(amount));
         borrowerAccount.setBalance(borrowerAccount.getBalance().add(amount));
         bankAccountRepository.save(lenderAccount);
         bankAccountRepository.save(borrowerAccount);
 
-        // 5. Calculate EMI
         BigDecimal emiAmount = emiCalculator.calculateEmi(amount, annualRate, tenure);
         BigDecimal totalRepayment = emiAmount.multiply(BigDecimal.valueOf(tenure))
                 .setScale(2, RoundingMode.HALF_UP);
@@ -100,10 +86,12 @@ public class LoanDisbursementService {
                 .setScale(2, RoundingMode.HALF_UP);
 
         LocalDate disbursementDate = LocalDate.now();
+
+        // RULE: first EMI due exactly 1 month after disbursement (same day next month)
+        // Loan on 20-Mar → first EMI due 20-Apr, last EMI due 20-Mar+tenure
         LocalDate firstEmiDate = disbursementDate.plusMonths(1);
         LocalDate lastEmiDate  = disbursementDate.plusMonths(tenure);
 
-        // 6. Create LoanSummary
         LoanSummary summary = LoanSummary.builder()
                 .loanOffer(offer)
                 .borrower(borrower)
@@ -125,30 +113,36 @@ public class LoanDisbursementService {
 
         summary = loanSummaryRepository.save(summary);
 
-        // 7. Generate EMI schedule (amortization table)
-        generateEmiSchedule(summary, amount, annualRate, emiAmount, tenure, firstEmiDate);
+        generateEmiSchedule(summary, amount, annualRate, emiAmount, tenure, disbursementDate);
 
-        // 8. Transition LoanRequest → DISBURSED
         LoanRequest request = offer.getLoanRequest();
         request.setStatus(LoanRequestStatus.DISBURSED);
         loanRequestRepository.save(request);
 
-        log.info("Loan disbursed: offerId={} borrower={} lender={} amount={}",
-                offerId, borrower.getId(), lender.getId(), amount);
+        log.info("Loan disbursed: offerId={} borrower={} lender={} amount={} firstEmi={}",
+                offerId, borrower.getId(), lender.getId(), amount, firstEmiDate);
 
         return toSummaryResponse(summary);
     }
 
     /**
-     * Generate full amortization table for the loan.
-     * Each row = one EMI with principal & interest breakdown.
+     * Generate full amortization table.
+     *
+     * RULE CHANGE: Due date = disbursementDate + i months (same day each month).
+     * Loan disbursed 20-Mar:
+     *   EMI #1 due 20-Apr
+     *   EMI #2 due 20-May
+     *   EMI #N due 20-Mar+N months
+     *
+     * OLD (wrong): firstEmiDate.plusMonths(i - 1) — always anchored to 1st of month
+     * NEW (correct): disbursementDate.plusMonths(i) — same day of month always
      */
     private void generateEmiSchedule(LoanSummary summary,
                                      BigDecimal principal,
                                      BigDecimal annualRate,
                                      BigDecimal emiAmount,
                                      int tenure,
-                                     LocalDate firstEmiDate) {
+                                     LocalDate disbursementDate) {
 
         BigDecimal outstanding = principal;
         List<EmiSchedule> schedule = new ArrayList<>();
@@ -159,7 +153,7 @@ public class LoanDisbursementService {
             BigDecimal principalComponent =
                     emiCalculator.calculatePrincipalComponent(emiAmount, interestComponent);
 
-            // Last EMI — adjust for rounding difference
+            // Last EMI: pay exact remaining principal to avoid rounding drift
             if (i == tenure) {
                 principalComponent = outstanding;
             }
@@ -173,7 +167,8 @@ public class LoanDisbursementService {
             EmiSchedule emi = EmiSchedule.builder()
                     .loanSummary(summary)
                     .emiNumber(i)
-                    .dueDate(firstEmiDate.plusMonths(i - 1))
+                    // FIXED: disbursementDate.plusMonths(i) keeps the same day every month
+                    .dueDate(disbursementDate.plusMonths(i))
                     .emiAmount(emiAmount)
                     .principalComponent(principalComponent)
                     .interestComponent(interestComponent)
@@ -185,11 +180,14 @@ public class LoanDisbursementService {
         }
 
         emiScheduleRepository.saveAll(schedule);
-        log.info("EMI schedule generated: loanSummaryId={} emis={}",
-                summary.getId(), schedule.size());
+        log.info("EMI schedule generated: loanSummaryId={} emis={} firstDue={} lastDue={}",
+                summary.getId(), schedule.size(),
+                schedule.get(0).getDueDate(),
+                schedule.get(schedule.size() - 1).getDueDate());
     }
 
-    // ── View EMI schedule ─────────────────────────────────────────────────
+    // ── Read operations ───────────────────────────────────────────────────
+
     @Transactional(readOnly = true)
     public List<EmiScheduleResponse> getEmiSchedule(Long loanSummaryId) {
         return emiScheduleRepository
@@ -197,7 +195,6 @@ public class LoanDisbursementService {
                 .stream().map(this::toEmiResponse).collect(Collectors.toList());
     }
 
-    // ── View loan summary ─────────────────────────────────────────────────
     @Transactional(readOnly = true)
     public LoanSummaryResponse getLoanSummary(Long loanSummaryId) {
         LoanSummary summary = loanSummaryRepository.findById(loanSummaryId)
@@ -206,21 +203,18 @@ public class LoanDisbursementService {
         return toSummaryResponse(summary);
     }
 
-    // ── View my loans (borrower) ──────────────────────────────────────────
     @Transactional(readOnly = true)
     public List<LoanSummaryResponse> getMyLoans(Long borrowerId) {
         return loanSummaryRepository.findByBorrowerId(borrowerId)
                 .stream().map(this::toSummaryResponse).collect(Collectors.toList());
     }
 
-    // ── View loans I funded (lender) ──────────────────────────────────────
     @Transactional(readOnly = true)
     public List<LoanSummaryResponse> getLoansFunded(Long lenderId) {
         return loanSummaryRepository.findByLenderId(lenderId)
                 .stream().map(this::toSummaryResponse).collect(Collectors.toList());
     }
 
-    // ── Admin: all loans ──────────────────────────────────────────────────
     @Transactional(readOnly = true)
     public List<LoanSummaryResponse> getAllLoans() {
         return loanSummaryRepository.findAll()
@@ -228,6 +222,7 @@ public class LoanDisbursementService {
     }
 
     // ── Mappers ───────────────────────────────────────────────────────────
+
     public LoanSummaryResponse toSummaryResponse(LoanSummary s) {
         return LoanSummaryResponse.builder()
                 .id(s.getId())

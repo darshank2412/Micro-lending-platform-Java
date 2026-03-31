@@ -15,10 +15,10 @@ import org.springframework.context.annotation.Configuration;
         info = @Info(
                 title       = "Micro Lending Platform API",
                 version     = "v1",
-                description = "Backend APIs for Micro Lending Platform — Week 1 & 2"
+                description = "Backend APIs for Micro Lending Platform"
         ),
         servers = @Server(url = "http://localhost:8081", description = "Local Dev"),
-        security = @SecurityRequirement(name = "basicAuth")
+        security = @SecurityRequirement(name = "bearerAuth")  // ← fixed
 )
 @SecuritySchemes({
         @SecurityScheme(

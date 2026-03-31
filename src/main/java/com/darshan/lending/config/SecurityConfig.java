@@ -2,6 +2,7 @@ package com.darshan.lending.config;
 
 import com.darshan.lending.repository.UserRepository;
 import com.darshan.lending.security.CustomUserDetailsService;
+import com.darshan.lending.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -24,6 +26,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class SecurityConfig {
 
     private final CustomUserDetailsService userDetailsService;
+    private final JwtAuthFilter jwtAuthFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -38,6 +41,8 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/auth/otp/send", "/auth/otp/verify").permitAll()
                         .requestMatchers(HttpMethod.POST, "/register").permitAll()
+                                .requestMatchers("/auth/login").permitAll()
+                                .requestMatchers("/auth/reset-password").permitAll()
 
                         // ── ADMIN ONLY — Loan Products ────────────────────────────────
                         .requestMatchers(HttpMethod.POST,   "/loan-products").hasRole("ADMIN")
@@ -77,11 +82,26 @@ public class SecurityConfig {
                         // ── ADMIN ONLY — View All Lender Preferences ──────────────────
                         .requestMatchers(HttpMethod.GET,   "/lender-preferences").hasRole("ADMIN")
 
+                                // ── ADMIN ONLY — Loan Management ──────────────────────────────────
+                                .requestMatchers(HttpMethod.GET,  "/loans").hasRole("ADMIN")
+                                .requestMatchers(HttpMethod.POST, "/loans/*/disburse").hasRole("ADMIN")
+
+// ── BORROWER ONLY — Loan Actions ──────────────────────────────────
+                                .requestMatchers(HttpMethod.GET,  "/loans/my").hasRole("BORROWER")
+                                .requestMatchers(HttpMethod.POST, "/loans/*/pay-emi").hasRole("BORROWER")
+                                .requestMatchers(HttpMethod.POST, "/loans/*/foreclose").hasRole("BORROWER")
+
+// ── LENDER ONLY — Funded Loans ────────────────────────────────────
+                                .requestMatchers(HttpMethod.GET,  "/loans/funded").hasRole("LENDER")
+
+// ── SHARED — Loan Details & Schedule ──────────────────────────────
+                                .requestMatchers(HttpMethod.GET,  "/loans/*").authenticated()
+                                .requestMatchers(HttpMethod.GET,  "/loans/*/schedule").authenticated()
+
                         // ── Everything else requires login ────────────────────────────
                         .anyRequest().authenticated()
                 )
-                .userDetailsService(userDetailsService)
-                .httpBasic(basic -> basic.authenticationEntryPoint(customAuthEntryPoint()));
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

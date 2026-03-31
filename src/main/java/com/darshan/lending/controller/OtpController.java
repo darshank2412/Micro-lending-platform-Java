@@ -3,6 +3,7 @@ package com.darshan.lending.controller;
 import com.darshan.lending.dto.ApiResponse;
 import com.darshan.lending.dto.OtpRequest;
 import com.darshan.lending.dto.OtpVerifyRequest;
+import com.darshan.lending.dto.OtpVerifyResponse;
 import com.darshan.lending.service.OtpService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,17 +39,14 @@ public class OtpController {
     }
 
     @PostMapping("/verify")
-    @Operation(summary = "Verify OTP & Create User")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> verifyOtp(
+    @Operation(summary = "Verify OTP & Create User / Login / Reset Password")
+    public ResponseEntity<ApiResponse<OtpVerifyResponse>> verifyOtp(
             @Valid @RequestBody OtpVerifyRequest request) {
 
-        Long userId = otpService.verifyOtpAndCreateUser(request);
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("userId", userId);
+        OtpVerifyResponse response = otpService.verifyOtpAndCreateUser(request);
 
         return ResponseEntity.ok(
-                ApiResponse.success("OTP verified successfully", data)
+                ApiResponse.success(response.getMessage(), response)
         );
     }
-}
+    }

@@ -2,6 +2,7 @@ package com.darshan.lending.service;
 
 import com.darshan.lending.dto.OtpRequest;
 import com.darshan.lending.dto.OtpVerifyRequest;
+import com.darshan.lending.dto.OtpVerifyResponse;
 import com.darshan.lending.entity.OtpVerification;
 import com.darshan.lending.entity.User;
 import com.darshan.lending.entity.enums.OtpPurpose;
@@ -10,6 +11,7 @@ import com.darshan.lending.entity.enums.UserStatus;
 import com.darshan.lending.exception.BusinessException;
 import com.darshan.lending.repository.OtpVerificationRepository;
 import com.darshan.lending.repository.UserRepository;
+import com.darshan.lending.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -32,22 +34,35 @@ public class OtpService {
     private static final String EMAIL_REGEX = "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$";
 
     private final OtpVerificationRepository otpRepo;
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final UserRepository            userRepository;
+    private final PasswordEncoder           passwordEncoder;
+    private final JwtUtil                   jwtUtil;
+
+    // ── Send OTP ─────────────────────────────────────────────────────────
 
     @Transactional
     public String sendOtp(OtpRequest request) {
 
         validateIdentifierMatchesOtpType(request.getIdentifier(), request.getOtpType());
 
-        if (request.getOtpType() == OtpType.PHONE && (request.getCountryCode() == null || request.getCountryCode().isBlank())) {
+        if (request.getOtpType() == OtpType.PHONE &&
+                (request.getCountryCode() == null || request.getCountryCode().isBlank())) {
             throw new BusinessException("Country code is required for PHONE type OTP");
         }
 
         if (request.getPurpose() == OtpPurpose.REGISTRATION) {
             boolean exists = userRepository.findByPhoneNumber(request.getIdentifier()).isPresent();
             if (exists) {
-                throw new BusinessException("User already registered with " + request.getIdentifier() + ". Please login instead.");
+                throw new BusinessException("User already registered with "
+                        + request.getIdentifier() + ". Please login instead.");
+            }
+        }
+
+        if (request.getPurpose() == OtpPurpose.RESET) {
+            boolean exists = userRepository.findByPhoneNumber(request.getIdentifier()).isPresent();
+            if (!exists) {
+                throw new BusinessException("No account found with "
+                        + request.getIdentifier() + ". Please register first.");
             }
         }
 
@@ -71,15 +86,19 @@ public class OtpService {
         return otpCode;
     }
 
+    // ── Verify OTP ───────────────────────────────────────────────────────
+
     @Transactional
-    public Long verifyOtpAndCreateUser(OtpVerifyRequest request) {
+    public OtpVerifyResponse verifyOtpAndCreateUser(OtpVerifyRequest request) {
 
-        Optional<OtpVerification> optOtp = otpRepo
+        // BUG FIX 1: was broken method call with wrong syntax and wrong method name
+        // Correct method: findTopByIdentifierAndVerifiedFalseOrderByCreatedAtDesc
+        // BUG FIX 2: must be VerifiedFALSE — looking for unverified OTP to verify it
+        OtpVerification otp = otpRepo
                 .findTopByIdentifierAndVerifiedFalseOrderByCreatedAtDesc(
-                        request.getIdentifier());
-
-        OtpVerification otp = optOtp.orElseThrow(() ->
-                new BusinessException("No pending OTP found for " + request.getIdentifier()));
+                        request.getIdentifier())
+                .orElseThrow(() -> new BusinessException(
+                        "No pending OTP found for " + request.getIdentifier()));
 
         if (LocalDateTime.now().isAfter(otp.getExpiresAt())) {
             throw new BusinessException("OTP has expired. Please request a new one.");
@@ -94,37 +113,112 @@ public class OtpService {
 
         log.info("OTP verified for identifier={}", request.getIdentifier());
 
-        Optional<User> existingUser = userRepository.findByPhoneNumber(request.getIdentifier());
-        if (existingUser.isPresent()) {
-            return existingUser.get().getId();
+        // ── REGISTRATION ─────────────────────────────────────────────────
+        if (otp.getPurpose() == OtpPurpose.REGISTRATION) {
+            Optional<User> existingUser = userRepository.findByPhoneNumber(request.getIdentifier());
+            if (existingUser.isPresent()) {
+                return OtpVerifyResponse.builder()
+                        .userId(existingUser.get().getId())
+                        .message("User already exists. Please login.")
+                        .build();
+            }
+
+            User user = new User();
+            user.setCountryCode(otp.getCountryCode());
+            user.setPhoneNumber(request.getIdentifier());
+            user.setPassword(passwordEncoder.encode(request.getIdentifier()));
+            user.setPhoneVerified(true);
+            user.setStatus(UserStatus.MOBILE_VERIFIED);
+            userRepository.save(user);
+
+            log.info("[DEV] New user created. Default password = phone number: {}",
+                    request.getIdentifier());
+
+            return OtpVerifyResponse.builder()
+                    .userId(user.getId())
+                    .message("Registration successful. Please complete your profile.")
+                    .build();
         }
 
-        User user = new User();
-        user.setCountryCode(otp.getCountryCode());
-        user.setPhoneNumber(request.getIdentifier());
-        user.setPassword(passwordEncoder.encode(request.getIdentifier()));
-        user.setPhoneVerified(true);
-        user.setStatus(UserStatus.MOBILE_VERIFIED);
+        // ── LOGIN ─────────────────────────────────────────────────────────
+        if (otp.getPurpose() == OtpPurpose.LOGIN) {
+            User user = userRepository.findByPhoneNumber(request.getIdentifier())
+                    .orElseThrow(() -> new BusinessException(
+                            "No account found. Please register first."));
 
+            String token = jwtUtil.generateToken(
+                    user.getPhoneNumber(),
+                    user.getRole().name()
+            );
+
+            log.info("JWT generated for userId={} role={}", user.getId(), user.getRole());
+
+            return OtpVerifyResponse.builder()
+                    .userId(user.getId())
+                    .token(token)
+                    .role(user.getRole().name())
+                    .fullName(user.getFullName())
+                    .message("Login successful.")
+                    .build();
+        }
+
+        // ── RESET ─────────────────────────────────────────────────────────
+        if (otp.getPurpose() == OtpPurpose.RESET) {
+            User user = userRepository.findByPhoneNumber(request.getIdentifier())
+                    .orElseThrow(() -> new BusinessException(
+                            "No account found for " + request.getIdentifier()));
+
+            return OtpVerifyResponse.builder()
+                    .userId(user.getId())
+                    .message("OTP verified. You may now reset your password.")
+                    .build();
+        }
+
+        throw new BusinessException("Unknown OTP purpose: " + otp.getPurpose());
+    }
+
+    // ── Reset Password ───────────────────────────────────────────────────
+
+    // BUG FIX 2 + 3: removed `static` keyword — static methods cannot access
+    // instance fields (userRepository, otpRepo, passwordEncoder)
+    @Transactional
+    public void resetPassword(String phoneNumber, String newPassword) {
+
+        // 1. Check user exists
+        User user = userRepository.findByPhoneNumber(phoneNumber)
+                .orElseThrow(() -> new BusinessException("User not found: " + phoneNumber));
+
+        // 2. Check a RESET OTP was recently verified
+        otpRepo.findTopByIdentifierAndPurposeAndVerifiedTrueOrderByCreatedAtDesc(
+                        phoneNumber, OtpPurpose.RESET)
+                .orElseThrow(() -> new BusinessException(
+                        "No verified RESET OTP found. Please verify OTP first."));
+
+        // 3. Validate password
+        if (newPassword == null || newPassword.trim().length() < 6) {
+            throw new BusinessException("Password must be at least 6 characters.");
+        }
+
+        // 4. Update password
+        user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
 
-        log.info("[DEV] New user created. Default password = phone number: {}", request.getIdentifier());
-
-        return user.getId();
+        log.info("Password reset successful for userId={}", user.getId());
     }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
 
     private void validateIdentifierMatchesOtpType(String identifier, OtpType otpType) {
         if (otpType == OtpType.PHONE) {
             if (!identifier.matches(PHONE_REGEX)) {
                 throw new BusinessException(
-                        "Identifier must be a valid 10-digit Indian mobile number (starting with 6-9) when otpType is PHONE"
-                );
+                        "Identifier must be a valid 10-digit Indian mobile number " +
+                                "(starting with 6-9) when otpType is PHONE");
             }
         } else if (otpType == OtpType.EMAIL) {
             if (!identifier.matches(EMAIL_REGEX)) {
                 throw new BusinessException(
-                        "Identifier must be a valid email address when otpType is EMAIL"
-                );
+                        "Identifier must be a valid email address when otpType is EMAIL");
             }
         }
     }
