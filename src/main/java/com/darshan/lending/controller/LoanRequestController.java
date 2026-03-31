@@ -19,8 +19,8 @@ import java.util.List;
 @RestController
 @RequestMapping("/loan-requests")
 @RequiredArgsConstructor
-@Tag(name = "08.Loan Request APIs", description = "Borrower submits loan requests; Lender discovers and accepts")
-@SecurityRequirement(name = "basicAuth")
+@Tag(name = "09.Loan Request APIs", description = "Borrower submits loan requests; Lender discovers and accepts")
+//@SecurityRequirement(name = "basicAuth")
 public class LoanRequestController {
 
     private final LoanRequestService loanRequestService;

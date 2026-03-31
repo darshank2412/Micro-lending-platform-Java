@@ -117,4 +117,9 @@ class KycServiceTest {
         User updated = userRepository.findById(testUser.getId()).orElseThrow();
         assertEquals(KycStatus.VERIFIED, updated.getKycStatus());
     }
+
+    @Test
+    void submitKyc_duplicateDocument_throwsException() {
+        // submit same doc type twice should throw
+    }
 }

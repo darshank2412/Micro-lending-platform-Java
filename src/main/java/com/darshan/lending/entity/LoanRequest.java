@@ -59,4 +59,8 @@ public class LoanRequest {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+
+    @Column(name = "preferred_emi_day")
+    private Integer preferredEmiDay;
 }

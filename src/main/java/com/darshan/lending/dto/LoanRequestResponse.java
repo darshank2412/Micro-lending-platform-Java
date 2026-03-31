@@ -23,4 +23,5 @@ public class LoanRequestResponse {
     private String rejectionReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Integer preferredEmiDay;
 }

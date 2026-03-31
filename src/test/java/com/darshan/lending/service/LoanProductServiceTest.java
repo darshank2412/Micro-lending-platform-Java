@@ -95,4 +95,10 @@ class LoanProductServiceTest {
         List<LoanProductResponse> all = loanProductService.getAll();
         assertTrue(all.stream().noneMatch(p -> p.getId().equals(loanProductId)));
     }
+
+    @Test
+    void getById_notFound_throwsException() {
+        assertThrows(ResourceNotFoundException.class,
+                () -> loanProductService.findById(99999L));
+    }
 }

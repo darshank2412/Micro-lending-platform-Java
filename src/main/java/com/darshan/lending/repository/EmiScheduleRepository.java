@@ -16,10 +16,6 @@ public interface EmiScheduleRepository extends JpaRepository<EmiSchedule, Long> 
 
     List<EmiSchedule> findByLoanSummaryIdOrderByEmiNumberAsc(Long loanSummaryId);
 
-    /**
-     * All unpaid EMIs for a loan — PENDING or OVERDUE — ordered by EMI number.
-     * Used by pay-emi and foreclosure to find what's left to pay.
-     */
     @Query("SELECT e FROM EmiSchedule e " +
             "WHERE e.loanSummary.id = :loanSummaryId " +
             "AND e.status IN (com.darshan.lending.entity.enums.EmiStatus.PENDING, " +
@@ -28,10 +24,6 @@ public interface EmiScheduleRepository extends JpaRepository<EmiSchedule, Long> 
     List<EmiSchedule> findPendingOrOverdueEmis(
             @Param("loanSummaryId") Long loanSummaryId);
 
-    /**
-     * Only PENDING EMIs — used internally when overdue marking hasn't run yet.
-     * Kept for backward compatibility.
-     */
     @Query("SELECT e FROM EmiSchedule e " +
             "WHERE e.loanSummary.id = :loanSummaryId " +
             "AND e.status = :status " +
@@ -40,14 +32,12 @@ public interface EmiScheduleRepository extends JpaRepository<EmiSchedule, Long> 
             @Param("loanSummaryId") Long loanSummaryId,
             @Param("status") EmiStatus status);
 
-    /** All overdue EMIs system-wide — used by the scheduler */
     @Query("SELECT e FROM EmiSchedule e " +
             "WHERE e.dueDate < :today AND e.status = :status")
     List<EmiSchedule> findOverdueEmis(
             @Param("today") LocalDate today,
             @Param("status") EmiStatus status);
 
-    /** Bulk mark overdue — called daily by OverdueMonitoringJob */
     @Modifying
     @Query("UPDATE EmiSchedule e SET e.status = :newStatus " +
             "WHERE e.dueDate < :today AND e.status = :oldStatus")
@@ -56,10 +46,20 @@ public interface EmiScheduleRepository extends JpaRepository<EmiSchedule, Long> 
             @Param("oldStatus") EmiStatus oldStatus,
             @Param("newStatus") EmiStatus newStatus);
 
-    /** Count paid EMIs for a loan */
+    // ── Per loan ──────────────────────────────────────────────────────────
     @Query("SELECT COUNT(e) FROM EmiSchedule e " +
             "WHERE e.loanSummary.id = :loanSummaryId AND e.status = :status")
     int countPaidEmis(
             @Param("loanSummaryId") Long loanSummaryId,
             @Param("status") EmiStatus status);
+
+    // ── Per borrower (used by CreditScoreService) ─────────────────────────
+    @Query("SELECT COUNT(e) FROM EmiSchedule e " +
+            "JOIN e.loanSummary s WHERE s.borrower.id = :borrowerId AND e.status = :status")
+    int countPaidEmisByBorrower(
+            @Param("borrowerId") Long borrowerId,
+            @Param("status") EmiStatus status);
+
+    @Query("SELECT COUNT(e) FROM EmiSchedule e JOIN e.loanSummary s WHERE s.borrower.id = :borrowerId")
+    long countTotalEmisByBorrower(@Param("borrowerId") Long borrowerId);
 }

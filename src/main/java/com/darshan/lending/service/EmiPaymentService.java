@@ -1,7 +1,9 @@
 package com.darshan.lending.service;
 
+import com.darshan.lending.config.LoanRepaymentConfig;
 import com.darshan.lending.dto.EmiScheduleResponse;
 import com.darshan.lending.dto.Foreclosureresponse;
+import com.darshan.lending.dto.LoanSummaryResponse;
 import com.darshan.lending.entity.BankAccount;
 import com.darshan.lending.entity.EmiSchedule;
 import com.darshan.lending.entity.LoanSummary;
@@ -29,114 +31,136 @@ import java.util.List;
 @Slf4j
 public class EmiPaymentService {
 
-    // ── Constants ─────────────────────────────────────────────────────────
-
-    /** Grace period: EMIs paid on/before this day of month have no penalty */
-    private static final int GRACE_PERIOD_DAY = 5;
-
-    /** Penal interest rate applied per day after grace period (annual rate basis) */
-    private static final BigDecimal PENAL_INTEREST_RATE = new BigDecimal("0.24"); // 24% p.a.
-
-    /** Foreclosure penalty as a fraction of outstanding principal */
-    private static final BigDecimal FORECLOSURE_PENALTY_RATE = new BigDecimal("0.02"); // 2%
-
-    private final LoanSummaryRepository  loanSummaryRepository;
-    private final EmiScheduleRepository  emiScheduleRepository;
-    private final BankAccountRepository  bankAccountRepository;
+    private final LoanSummaryRepository   loanSummaryRepository;
+    private final EmiScheduleRepository   emiScheduleRepository;
+    private final BankAccountRepository   bankAccountRepository;
     private final LoanDisbursementService loanDisbursementService;
+    private final LoanRepaymentConfig     repaymentConfig;
 
-    // ─────────────────────────────────────────────────────────────────────
-    // PAY NEXT EMI
-    // ─────────────────────────────────────────────────────────────────────
+    // ── Pay next EMI ──────────────────────────────────────────────────────────
 
     /**
-     * BORROWER — Pay the next pending/overdue EMI.
-     *
-     * Business rules enforced:
-     * 1. Loan must be ACTIVE
-     * 2. Borrower identity verified
-     * 3. Current month's EMI must be cleared before paying advance
-     * 4. Max 1 EMI can be paid in advance (i.e. next month's)
-     * 5. Late penalty applied if today > 5th of due month
-     *    Penalty = emiAmount × penalRate × (daysLate / 365)
-     * 6. Debit borrower savings, credit lender savings
-     * 7. Update LoanSummary counters and mark COMPLETED when all paid
+     *  borrower enters any amount they can afford.
+     * - If amount >= EMI due → EMI marked PAID, excess reduces next EMI
+     * - If amount < EMI due → EMI marked PARTIAL, shortfall added to next EMI
+     * - Penalty calculated if paying late
      */
     @Transactional
-    public EmiScheduleResponse payNextEmi(Long loanSummaryId, Long borrowerId) {
+    public EmiScheduleResponse payEmi(Long loanSummaryId, Long borrowerId, BigDecimal amountPaid) {
 
         LoanSummary loan = loadActiveLoan(loanSummaryId);
         verifyBorrower(loan, borrowerId);
+
+        if (amountPaid.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("Payment amount must be greater than zero");
+        }
 
         List<EmiSchedule> pendingEmis = emiScheduleRepository
                 .findPendingOrOverdueEmis(loanSummaryId);
 
         if (pendingEmis.isEmpty()) {
-            throw new BusinessException("No pending EMIs found for loan: " + loanSummaryId);
+            throw new BusinessException("No pending EMIs for loan: " + loanSummaryId);
         }
 
-        EmiSchedule nextEmi = pendingEmis.get(0);
-        LocalDate today     = LocalDate.now();
+        EmiSchedule currentEmi = pendingEmis.get(0);
+        LocalDate today = LocalDate.now();
 
-        // ── Advance payment guard ──────────────────────────────────────────
-        // Allow paying advance only if we are past or in the current EMI's due month
-        // and the very next EMI is being paid (not skipping ahead 2+)
-        validateAdvancePayment(loan, nextEmi, today);
+        validateSequential(loan, currentEmi);
 
-        // ── Late penalty calculation ───────────────────────────────────────
-        BigDecimal penalty = calculateLatePenalty(nextEmi, today);
-        BigDecimal totalPayable = nextEmi.getEmiAmount().add(penalty)
+        // Calculate penalty if late
+        BigDecimal penalty = calculateLatePenalty(currentEmi, today);
+        BigDecimal totalDue = currentEmi.getEmiAmount().add(penalty)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // ── Bank account operations ────────────────────────────────────────
+        // Check borrower balance
         BankAccount borrowerAccount = getBorrowerAccount(borrowerId);
         BankAccount lenderAccount   = getLenderAccount(loan.getLender().getId());
 
-        if (borrowerAccount.getBalance().compareTo(totalPayable) < 0) {
+        if (borrowerAccount.getBalance().compareTo(amountPaid) < 0) {
             throw new BusinessException(
-                    "Insufficient balance. Required: " + totalPayable
-                            + ", Available: " + borrowerAccount.getBalance());
+                    "Insufficient balance. Available: " + borrowerAccount.getBalance()
+                            + ", Trying to pay: " + amountPaid);
         }
 
-        borrowerAccount.setBalance(borrowerAccount.getBalance().subtract(totalPayable));
-        lenderAccount.setBalance(lenderAccount.getBalance().add(totalPayable));
+        // Transfer money
+        borrowerAccount.setBalance(borrowerAccount.getBalance().subtract(amountPaid));
+        lenderAccount.setBalance(lenderAccount.getBalance().add(amountPaid));
         bankAccountRepository.save(borrowerAccount);
         bankAccountRepository.save(lenderAccount);
 
-        // ── Mark EMI as paid ───────────────────────────────────────────────
-        nextEmi.setStatus(EmiStatus.PAID);
-        nextEmi.setPaidDate(today);
-        emiScheduleRepository.save(nextEmi);
+        BigDecimal shortfall = totalDue.subtract(amountPaid).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal excess    = amountPaid.subtract(totalDue).setScale(2, RoundingMode.HALF_UP);
+        boolean isPartial    = amountPaid.compareTo(totalDue) < 0;
+        boolean isExcess     = amountPaid.compareTo(totalDue) > 0;
 
-        // ── Update loan summary counters ───────────────────────────────────
-        loan.setEmisPaid(loan.getEmisPaid() + 1);
-        loan.setEmisRemaining(loan.getEmisRemaining() - 1);
-        loan.setOutstandingPrincipal(nextEmi.getOutstandingPrincipal());
+        // Update current EMI
+        currentEmi.setPaidDate(today);
+        currentEmi.setPaidAmount(amountPaid);
 
-        // ── Check if loan is fully repaid ──────────────────────────────────
-        if (loan.getEmisRemaining() == 0) {
-            loan.setStatus(LoanStatus.COMPLETED);
-            loan.setOutstandingPrincipal(BigDecimal.ZERO);
-            log.info("Loan COMPLETED: loanSummaryId={} borrower={}",
-                    loanSummaryId, borrowerId);
+        if (isPartial) {
+            // ── PARTIAL PAYMENT ───────────────────────────────────────────────
+            currentEmi.setStatus(EmiStatus.PARTIAL);
+
+            // Add shortfall to next EMI
+            if (pendingEmis.size() > 1) {
+                EmiSchedule nextEmi = pendingEmis.get(1);
+                nextEmi.setEmiAmount(
+                        nextEmi.getEmiAmount().add(shortfall).setScale(2, RoundingMode.HALF_UP));
+                emiScheduleRepository.save(nextEmi);
+                log.info("Shortfall of {} added to EMI #{}", shortfall, nextEmi.getEmiNumber());
+            } else {
+                // Last EMI and partial — mark loan as still active
+                log.warn("Partial payment on last EMI. Shortfall: {}", shortfall);
+            }
+
+            log.info("PARTIAL EMI: loanSummaryId={} emiNumber={} paid={} due={} shortfall={}",
+                    loanSummaryId, currentEmi.getEmiNumber(), amountPaid, totalDue, shortfall);
+
+        } else {
+            // ── FULL OR EXCESS PAYMENT ────────────────────────────────────────
+            currentEmi.setStatus(EmiStatus.PAID);
+
+            if (isExcess && pendingEmis.size() > 1) {
+                // Reduce next EMI by excess amount
+                EmiSchedule nextEmi = pendingEmis.get(1);
+                BigDecimal reduced = nextEmi.getEmiAmount().subtract(excess)
+                        .setScale(2, RoundingMode.HALF_UP);
+                if (reduced.compareTo(BigDecimal.ZERO) > 0) {
+                    nextEmi.setEmiAmount(reduced);
+                    emiScheduleRepository.save(nextEmi);
+                    log.info("Excess of {} reduced EMI #{}", excess, nextEmi.getEmiNumber());
+                }
+            }
+
+            // Update loan summary only on full payment
+            loan.setEmisPaid(loan.getEmisPaid() + 1);
+            loan.setEmisRemaining(loan.getEmisRemaining() - 1);
+            loan.setOutstandingPrincipal(currentEmi.getOutstandingPrincipal());
+
+            if (loan.getEmisRemaining() == 0) {
+                loan.setStatus(LoanStatus.COMPLETED);
+                loan.setOutstandingPrincipal(BigDecimal.ZERO);
+                log.info("Loan COMPLETED: loanSummaryId={}", loanSummaryId);
+            }
+
+            log.info("FULL EMI paid: loanSummaryId={} emiNumber={} paid={} penalty={}",
+                    loanSummaryId, currentEmi.getEmiNumber(), amountPaid, penalty);
         }
 
+        emiScheduleRepository.save(currentEmi);
         loanSummaryRepository.save(loan);
 
-        log.info("EMI paid: loanSummaryId={} emiNumber={} amount={} penalty={} borrower={}",
-                loanSummaryId, nextEmi.getEmiNumber(), nextEmi.getEmiAmount(),
-                penalty, borrowerId);
-
-        EmiScheduleResponse response = loanDisbursementService.toEmiResponse(nextEmi);
+        EmiScheduleResponse response = loanDisbursementService.toEmiResponse(currentEmi);
         response.setPenaltyAmount(penalty);
-        response.setTotalPaid(totalPayable);
+        response.setTotalPaid(amountPaid);
+        response.setShortfall(isPartial ? shortfall : BigDecimal.ZERO);
+        response.setMessage(isPartial
+                ? "Partial payment accepted. Shortfall of ₹" + shortfall + " added to next EMI."
+                : "EMI paid successfully.");
         return response;
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // FORECLOSURE
-    // ─────────────────────────────────────────────────────────────────────
-
+    // ── Foreclose loan ────────────────────────────────────────────────────────
 
     @Transactional
     public Foreclosureresponse foreclose(Long loanSummaryId, Long borrowerId) {
@@ -144,28 +168,26 @@ public class EmiPaymentService {
         LoanSummary loan = loadActiveLoan(loanSummaryId);
         verifyBorrower(loan, borrowerId);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today       = LocalDate.now();
         BigDecimal outstanding = loan.getOutstandingPrincipal();
 
-        // ── Accrued interest since last EMI / disbursement ─────────────────
         LocalDate interestFrom = resolveInterestFromDate(loan);
         long daysAccrued = ChronoUnit.DAYS.between(interestFrom, today);
         if (daysAccrued < 0) daysAccrued = 0;
 
         BigDecimal accruedInterest = outstanding
-                .multiply(loan.getInterestRate().divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP))
+                .multiply(loan.getInterestRate()
+                        .divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP))
                 .multiply(BigDecimal.valueOf(daysAccrued))
                 .divide(BigDecimal.valueOf(365), 2, RoundingMode.HALF_UP);
 
-        // ── 2% foreclosure penalty ─────────────────────────────────────────
         BigDecimal foreclosureCharge = outstanding
-                .multiply(FORECLOSURE_PENALTY_RATE)
+                .multiply(repaymentConfig.getForeclosurePenaltyRate())
                 .setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal totalPayable = outstanding.add(accruedInterest).add(foreclosureCharge)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // ── Bank account operations ────────────────────────────────────────
         BankAccount borrowerAccount = getBorrowerAccount(borrowerId);
         BankAccount lenderAccount   = getLenderAccount(loan.getLender().getId());
 
@@ -180,27 +202,18 @@ public class EmiPaymentService {
         bankAccountRepository.save(borrowerAccount);
         bankAccountRepository.save(lenderAccount);
 
-        // ── Mark all remaining EMIs as PAID ────────────────────────────────
-        List<EmiSchedule> remaining = emiScheduleRepository
-                .findPendingOrOverdueEmis(loanSummaryId);
-
-        remaining.forEach(e -> {
-            e.setStatus(EmiStatus.PAID);
-            e.setPaidDate(today);
-        });
+        List<EmiSchedule> remaining = emiScheduleRepository.findPendingOrOverdueEmis(loanSummaryId);
+        remaining.forEach(e -> { e.setStatus(EmiStatus.PAID); e.setPaidDate(today); });
         emiScheduleRepository.saveAll(remaining);
 
-        // ── Close the loan ─────────────────────────────────────────────────
         loan.setStatus(LoanStatus.COMPLETED);
         loan.setOutstandingPrincipal(BigDecimal.ZERO);
         loan.setEmisPaid(loan.getTenureMonths());
         loan.setEmisRemaining(0);
         loanSummaryRepository.save(loan);
 
-        log.info("Loan FORECLOSED: loanSummaryId={} borrower={} outstanding={} " +
-                        "accruedInterest={} penalty={} totalPaid={}",
-                loanSummaryId, borrowerId, outstanding,
-                accruedInterest, foreclosureCharge, totalPayable);
+        log.info("Loan FORECLOSED: loanSummaryId={} borrower={} totalPaid={}",
+                loanSummaryId, borrowerId, totalPayable);
 
         return Foreclosureresponse.builder()
                 .loanSummaryId(loanSummaryId)
@@ -213,9 +226,60 @@ public class EmiPaymentService {
                 .build();
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // PRIVATE HELPERS
-    // ─────────────────────────────────────────────────────────────────────
+    // ── Partial repayment ─────────────────────────────────────────────────────
+
+    @Transactional
+    public LoanSummaryResponse partialRepayment(Long loanSummaryId, Long borrowerId,
+                                                BigDecimal amount) {
+
+        LoanSummary summary = loanSummaryRepository.findById(loanSummaryId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Loan not found: " + loanSummaryId));
+
+        if (!summary.getBorrower().getId().equals(borrowerId)) {
+            throw new BusinessException("You can only repay your own loans");
+        }
+        if (summary.getStatus() != LoanStatus.ACTIVE) {
+            throw new BusinessException("Loan is not ACTIVE");
+        }
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("Repayment amount must be positive");
+        }
+        if (amount.compareTo(summary.getOutstandingPrincipal()) > 0) {
+            throw new BusinessException("Amount exceeds outstanding principal: "
+                    + summary.getOutstandingPrincipal());
+        }
+
+        BankAccount borrowerAccount = getBorrowerAccount(borrowerId);
+        BankAccount lenderAccount   = getLenderAccount(summary.getLender().getId());
+
+        if (borrowerAccount.getBalance().compareTo(amount) < 0) {
+            throw new BusinessException("Insufficient balance");
+        }
+
+        borrowerAccount.setBalance(borrowerAccount.getBalance().subtract(amount));
+        lenderAccount.setBalance(lenderAccount.getBalance().add(amount));
+        bankAccountRepository.save(borrowerAccount);
+        bankAccountRepository.save(lenderAccount);
+
+        BigDecimal newOutstanding = summary.getOutstandingPrincipal().subtract(amount)
+                .setScale(2, RoundingMode.HALF_UP);
+        summary.setOutstandingPrincipal(newOutstanding);
+
+        if (newOutstanding.compareTo(BigDecimal.ZERO) == 0) {
+            summary.setStatus(LoanStatus.COMPLETED);
+            summary.setEmisRemaining(0);
+            log.info("Loan COMPLETED via partial repayment: loanSummaryId={}", loanSummaryId);
+        }
+
+        loanSummaryRepository.save(summary);
+        log.info("Partial repayment: loanSummaryId={} amount={} newOutstanding={}",
+                loanSummaryId, amount, newOutstanding);
+
+        return loanDisbursementService.toSummaryResponse(summary);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
 
     private LoanSummary loadActiveLoan(Long loanSummaryId) {
         LoanSummary loan = loanSummaryRepository.findById(loanSummaryId)
@@ -235,86 +299,53 @@ public class EmiPaymentService {
         }
     }
 
-
-    /**
-     * Advance payment rule:
-     * - No advance payments allowed at all
-     * - EMI can only be paid once today's date is in or past the due month
-     * - Late payments (after 5th) are allowed with penalty — handled separately
-     */
-    private void validateAdvancePayment(LoanSummary loan, EmiSchedule nextEmi, LocalDate today) {
+    private void validateSequential(LoanSummary loan, EmiSchedule nextEmi) {
         int emiNum = nextEmi.getEmiNumber();
+        if (emiNum <= 1) return;
 
-        // Ensure previous EMI is cleared before paying this one
-        if (emiNum > 1) {
-            EmiSchedule prevEmi = emiScheduleRepository
-                    .findByLoanSummaryIdOrderByEmiNumberAsc(loan.getId())
-                    .stream()
-                    .filter(e -> e.getEmiNumber() == emiNum - 1)
-                    .findFirst()
-                    .orElse(null);
+        List<EmiSchedule> allEmis = emiScheduleRepository
+                .findByLoanSummaryIdOrderByEmiNumberAsc(loan.getId());
 
-            if (prevEmi != null && prevEmi.getStatus() != EmiStatus.PAID) {
-                throw new BusinessException(
-                        "Please clear EMI #" + prevEmi.getEmiNumber()
-                                + " (due " + prevEmi.getDueDate() + ") before paying EMI #" + emiNum);
-            }
-        }
-
-        // Block advance payment: due month must have arrived
-        LocalDate dueDate = nextEmi.getDueDate();
-        boolean dueMonthReached = today.getYear() > dueDate.getYear()
-                || (today.getYear() == dueDate.getYear()
-                && today.getMonthValue() >= dueDate.getMonthValue());
-
-        if (!dueMonthReached) {
-            throw new BusinessException(
-                    "EMI #" + emiNum + " is due on " + dueDate +
-                            ". Advance EMI payments are not allowed. " +
-                            "Payment window opens on " +
-                            dueDate.withDayOfMonth(1) + ".");
-        }
+        allEmis.stream()
+                .filter(e -> e.getEmiNumber() == emiNum - 1)
+                .findFirst()
+                .ifPresent(prevEmi -> {
+                    if (prevEmi.getStatus() != EmiStatus.PAID) {
+                        throw new BusinessException(
+                                "Please clear EMI #" + prevEmi.getEmiNumber()
+                                        + " (due " + prevEmi.getDueDate()
+                                        + ") before paying EMI #" + emiNum);
+                    }
+                });
     }
 
-    /**
-     * Late penalty:
-     * - Due date is the 1st of each month
-     * - Grace period: up to 5th of the month
-     * - After 5th: Penalty = emiAmount × penalRate × (daysLate / 365)
-     *
-     * daysLate = today − (dueDate + 5 days)
-     */
     private BigDecimal calculateLatePenalty(EmiSchedule emi, LocalDate today) {
-        LocalDate graceCutoff = emi.getDueDate().withDayOfMonth(GRACE_PERIOD_DAY);
+        LocalDate graceCutoff = emi.getDueDate()
+                .plusDays(repaymentConfig.getGracePeriodDays());
 
         if (!today.isAfter(graceCutoff)) {
-            return BigDecimal.ZERO; // within grace period — no penalty
+            return BigDecimal.ZERO;
         }
 
         long daysLate = ChronoUnit.DAYS.between(graceCutoff, today);
 
         BigDecimal penalty = emi.getEmiAmount()
-                .multiply(PENAL_INTEREST_RATE)
+                .multiply(repaymentConfig.getPenalInterestRate())
                 .multiply(BigDecimal.valueOf(daysLate))
                 .divide(BigDecimal.valueOf(365), 2, RoundingMode.HALF_UP);
 
-        log.info("Late penalty applied: emiNumber={} daysLate={} penalty={}",
-                emi.getEmiNumber(), daysLate, penalty);
+        log.info("Late penalty: emiNumber={} dueDate={} graceCutoff={} daysLate={} penalty={}",
+                emi.getEmiNumber(), emi.getDueDate(), graceCutoff, daysLate, penalty);
 
         return penalty;
     }
 
-    /**
-     * For accrued interest in foreclosure:
-     * - If no EMIs paid → accrue from disbursement date
-     * - Otherwise → accrue from the last paid EMI's due date
-     */
     private LocalDate resolveInterestFromDate(LoanSummary loan) {
         return emiScheduleRepository
                 .findByLoanSummaryIdOrderByEmiNumberAsc(loan.getId())
                 .stream()
                 .filter(e -> e.getStatus() == EmiStatus.PAID)
-                .reduce((first, second) -> second) // last paid
+                .reduce((first, second) -> second)
                 .map(EmiSchedule::getDueDate)
                 .orElse(loan.getDisbursementDate());
     }

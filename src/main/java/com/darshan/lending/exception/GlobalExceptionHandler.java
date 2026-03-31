@@ -15,6 +15,10 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 
 @RestControllerAdvice
 @Slf4j
@@ -119,5 +123,36 @@ public class GlobalExceptionHandler {
         log.error("UNEXPECTED ERROR: ", ex); // ADD THIS LINE
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error(ex.getMessage())); // CHANGE TO ex.getMessage()
+    }
+
+    // ── 401 Unauthorized ──────────────────────────────────────────────
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthException(AuthenticationException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.error("Unauthorized: " + ex.getMessage()));
+    }
+
+    // ── 403 Forbidden ─────────────────────────────────────────────────
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error("Access denied. You don't have permission."));
+    }
+
+    // ── 400 Wrong path variable type (e.g. /loans/abc instead of /loans/1) ──
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error("Invalid parameter '" + ex.getName()
+                        + "': expected " + ex.getRequiredType().getSimpleName()));
+    }
+
+    // ── 400 Missing required query parameter ──────────────────────────
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingParam(
+            MissingServletRequestParameterException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error("Required parameter missing: " + ex.getParameterName()));
     }
 }

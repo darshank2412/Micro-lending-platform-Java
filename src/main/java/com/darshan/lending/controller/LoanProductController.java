@@ -14,18 +14,20 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @RestController
 @RequestMapping("/loan-products")
 @RequiredArgsConstructor
-@Tag(name = "05.Loan Product APIs", description = "Loan product CRUD — minAmount < maxAmount, minInterest < maxInterest, minTenure < maxTenure")
+@Tag(name = "06.Loan Product APIs", description = "Loan product CRUD — minAmount < maxAmount, minInterest < maxInterest, minTenure < maxTenure")
 public class LoanProductController {
 
     private final LoanProductService loanProductService;
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    @SecurityRequirement(name = "basicAuth")
+//    @SecurityRequirement(name = "basicAuth")
     @Operation(summary = "Create loan product (ADMIN only)")
     public ResponseEntity<ApiResponse<LoanProductResponse>> create(
             @Valid @RequestBody LoanProductRequest request) {
@@ -65,5 +67,11 @@ public class LoanProductController {
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
         loanProductService.delete(id);
         return ResponseEntity.ok(ApiResponse.success("Loan product deactivated", null));
+    }
+
+    @Operation(summary = "Get all active loan products (paginated)")
+    @GetMapping("/loan-products/paged")
+    public ResponseEntity<Page<LoanProductResponse>> getLoanProductsPaged(Pageable pageable) {
+        return ResponseEntity.ok(loanProductService.findAllPaged(pageable));
     }
 }

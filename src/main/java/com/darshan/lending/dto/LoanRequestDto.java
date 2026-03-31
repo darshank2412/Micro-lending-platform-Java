@@ -35,4 +35,11 @@ public class LoanRequestDto {
     @Size(max = 500, message = "Description cannot exceed 500 characters")
     @Schema(example = "College tuition fees for 2026", description = "Optional description of loan purpose")
     private String purposeDescription;
+
+    @Min(value = 1, message = "EMI day must be between 1 and 28")
+    @Max(value = 28, message = "EMI day must be between 1 and 28")
+    @Schema(example = "5", description = "Preferred EMI payment day (1–28). Optional. Falls back to lender preference if not set.")
+    private Integer preferredEmiDay;
+
+
 }

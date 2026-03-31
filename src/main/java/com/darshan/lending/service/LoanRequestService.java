@@ -15,6 +15,7 @@ import com.darshan.lending.repository.LenderPreferenceRepository;
 import com.darshan.lending.repository.LoanProductRepository;
 import com.darshan.lending.repository.LoanRequestRepository;
 import com.darshan.lending.repository.UserRepository;
+import com.darshan.lending.util.LoanStateMachine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,9 +29,9 @@ import java.util.stream.Collectors;
 @Slf4j
 public class LoanRequestService {
 
-    private final LoanRequestRepository loanRequestRepository;
-    private final UserRepository userRepository;
-    private final LoanProductRepository loanProductRepository;
+    private final LoanRequestRepository      loanRequestRepository;
+    private final UserRepository             userRepository;
+    private final LoanProductRepository      loanProductRepository;
     private final LenderPreferenceRepository lenderPreferenceRepository;
 
     // ── BORROWER: Submit a loan request ──────────────────────────────────────
@@ -78,6 +79,7 @@ public class LoanRequestService {
                 .tenureMonths(dto.getTenureMonths())
                 .purpose(dto.getPurpose())
                 .purposeDescription(dto.getPurposeDescription())
+                .preferredEmiDay(dto.getPreferredEmiDay())
                 .status(LoanRequestStatus.PENDING)
                 .build();
 
@@ -107,10 +109,8 @@ public class LoanRequestService {
             throw new BusinessException("You can only cancel your own loan requests");
         }
 
-        if (request.getStatus() != LoanRequestStatus.PENDING) {
-            throw new BusinessException(
-                    "Only PENDING requests can be cancelled. Current: " + request.getStatus());
-        }
+        // ── State machine validation ──────────────────────────────────────
+        LoanStateMachine.validateTransition(request.getStatus(), LoanRequestStatus.CANCELLED);
 
         request.setStatus(LoanRequestStatus.CANCELLED);
         log.info("Loan request cancelled: id={}", requestId);
@@ -132,10 +132,8 @@ public class LoanRequestService {
 
         LoanRequest request = findRequest(requestId);
 
-        if (request.getStatus() != LoanRequestStatus.PENDING) {
-            throw new BusinessException(
-                    "Only PENDING requests can be matched. Current: " + request.getStatus());
-        }
+        // ── State machine validation ──────────────────────────────────────
+        LoanStateMachine.validateTransition(request.getStatus(), LoanRequestStatus.MATCHED);
 
         request.setStatus(LoanRequestStatus.MATCHED);
         log.info("Loan request matched: id={}", requestId);
@@ -148,9 +146,8 @@ public class LoanRequestService {
 
         LoanRequest request = findRequest(requestId);
 
-        if (request.getStatus() != LoanRequestStatus.PENDING) {
-            throw new BusinessException("Only PENDING requests can be rejected");
-        }
+        // ── State machine validation ──────────────────────────────────────
+        LoanStateMachine.validateTransition(request.getStatus(), LoanRequestStatus.REJECTED);
 
         request.setStatus(LoanRequestStatus.REJECTED);
         request.setRejectionReason(reason);
@@ -185,7 +182,6 @@ public class LoanRequestService {
                     "No active preferences found. Please set your lending preferences first.");
         }
 
-        // Collect all matching requests across all loan product preferences
         return preferences.stream()
                 .flatMap(preference -> loanRequestRepository.findPendingMatchingPreference(
                         preference.getMinLoanAmount(),
@@ -209,10 +205,8 @@ public class LoanRequestService {
 
         LoanRequest request = findRequest(requestId);
 
-        if (request.getStatus() != LoanRequestStatus.MATCHED) {
-            throw new BusinessException(
-                    "Only MATCHED requests can be accepted. Current: " + request.getStatus());
-        }
+        // ── State machine validation ──────────────────────────────────────
+        LoanStateMachine.validateTransition(request.getStatus(), LoanRequestStatus.ACCEPTED);
 
         request.setStatus(LoanRequestStatus.ACCEPTED);
         log.info("Loan request accepted: id={} lender={}", requestId, lenderId);
@@ -249,6 +243,7 @@ public class LoanRequestService {
                 .purpose(r.getPurpose())
                 .purposeDescription(r.getPurposeDescription())
                 .status(r.getStatus())
+                .preferredEmiDay(r.getPreferredEmiDay())
                 .rejectionReason(r.getRejectionReason())
                 .createdAt(r.getCreatedAt())
                 .updatedAt(r.getUpdatedAt())

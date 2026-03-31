@@ -66,4 +66,7 @@ public class LenderPreference {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Column(name = "preferred_payment_day")
+    private Integer preferredPaymentDay;
 }

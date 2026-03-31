@@ -57,4 +57,15 @@ public class LenderPreferenceDto {
     @NotNull(message = "Risk appetite is required")
     @Schema(example = "MEDIUM", description = "LOW, MEDIUM, or HIGH")
     private RiskAppetite riskAppetite;
+
+
+    @Min(value = 1, message = "Payment day must be between 1 and 28")
+    @Max(value = 28, message = "Payment day must be between 1 and 28")
+    @Schema(
+            example = "5",
+            description = "Preferred day of month for EMI payment (1-28). " +
+                    "E.g. 5 means borrower should pay on 5th of every month. " +
+                    "Leave null for no preference."
+    )
+    private Integer preferredPaymentDay;
 }

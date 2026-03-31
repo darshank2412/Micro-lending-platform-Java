@@ -35,4 +35,6 @@ public interface LenderPreferenceRepository extends JpaRepository<LenderPreferen
 
     // All active preferences for a lender
     List<LenderPreference> findByLenderIdAndIsActiveTrue(Long lenderId);
+
+
 }

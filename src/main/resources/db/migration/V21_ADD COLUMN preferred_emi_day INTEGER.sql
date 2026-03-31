@@ -1,0 +1,1 @@
+ALTER TABLE loan_request ADD COLUMN preferred_emi_day INTEGER;

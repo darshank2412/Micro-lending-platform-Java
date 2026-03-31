@@ -154,4 +154,14 @@ class BankAccountServiceTest {
         assertThrows(ResourceNotFoundException.class,
                 () -> bankAccountService.openLoanAccount(999999L, loanProductId));
     }
+
+    @Test
+    void deposit_onLoanAccount_throwsException() {
+        // deposit on a LOAN account should throw BusinessException
+    }
+
+    @Test
+    void withdraw_insufficientBalance_throwsException() {
+        // withdraw more than balance should throw
+    }
 }

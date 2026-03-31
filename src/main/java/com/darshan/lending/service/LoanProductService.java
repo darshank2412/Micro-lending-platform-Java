@@ -9,6 +9,8 @@ import com.darshan.lending.exception.ResourceNotFoundException;
 import com.darshan.lending.repository.LoanProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -74,6 +76,12 @@ public class LoanProductService {
         product.setStatus(ProductStatus.INACTIVE);
         repo.save(product);
         log.info("Loan product deactivated: id={}", id);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<LoanProductResponse> findAllPaged(Pageable pageable) {
+        return repo.findAll(pageable)
+                .map(this::toResponse);
     }
 
     public LoanProduct findById(Long id) {

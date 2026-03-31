@@ -2,6 +2,7 @@ package com.darshan.lending.config;
 
 import com.darshan.lending.repository.UserRepository;
 import com.darshan.lending.security.CustomUserDetailsService;
+import com.darshan.lending.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
@@ -13,9 +14,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
-import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -24,6 +24,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class SecurityConfig {
 
     private final CustomUserDetailsService userDetailsService;
+    private final JwtAuthFilter            jwtAuthFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -31,13 +32,31 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(ex -> ex.authenticationEntryPoint(customAuthEntryPoint()))
+
+                // ── JSON responses for 401 and 403 ───────────────────────────────
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setContentType("application/json");
+                            response.setStatus(401);
+                            response.getWriter().write(
+                                    "{\"success\":false,\"message\":\"Unauthorized. Please provide a valid JWT token.\",\"data\":null}");
+                        })
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            response.setContentType("application/json");
+                            response.setStatus(403);
+                            response.getWriter().write(
+                                    "{\"success\":false,\"message\":\"Forbidden. You do not have permission.\",\"data\":null}");
+                        })
+                )
+
                 .authorizeHttpRequests(auth -> auth
 
                         // ── Public ───────────────────────────────────────────────────
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/auth/otp/send", "/auth/otp/verify").permitAll()
                         .requestMatchers(HttpMethod.POST, "/register").permitAll()
+                        .requestMatchers("/auth/login").permitAll()
+                        .requestMatchers("/auth/reset-password").permitAll()
 
                         // ── ADMIN ONLY — Loan Products ────────────────────────────────
                         .requestMatchers(HttpMethod.POST,   "/loan-products").hasRole("ADMIN")
@@ -49,16 +68,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT,    "/savings-products/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/savings-products/**").hasRole("ADMIN")
 
-                                // ── ADMIN ONLY — Admin Management ─────────────────────────────
-                                .requestMatchers(HttpMethod.POST,   "/admins").hasRole("ADMIN")
-                                .requestMatchers(HttpMethod.GET,    "/admins").hasRole("ADMIN")
-                                .requestMatchers(HttpMethod.DELETE, "/admins/**").hasRole("ADMIN")
+                        // ── ADMIN ONLY — Admin Management ─────────────────────────────
+                        .requestMatchers(HttpMethod.POST,   "/admins").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET,    "/admins").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/admins/**").hasRole("ADMIN")
 
-                                // ── ADMIN: Match a loan request ───────────────────────────────────────────
-                                .requestMatchers(HttpMethod.PATCH, "/loan-requests/*/match").hasRole("ADMIN")
+                        // ── ADMIN — Loan Request Matchmaking ──────────────────────────
+                        .requestMatchers(HttpMethod.PATCH, "/loan-requests/*/match").hasRole("ADMIN")
 
-// ── LENDER: Accept a matched loan request ────────────────────────────────
-                                .requestMatchers(HttpMethod.PATCH, "/loan-requests/*/accept").hasRole("LENDER")
+                        // ── LENDER — Accept a matched loan request ────────────────────
+                        .requestMatchers(HttpMethod.PATCH, "/loan-requests/*/accept").hasRole("LENDER")
 
                         // ── BORROWER ONLY — Loan Requests ─────────────────────────────
                         .requestMatchers(HttpMethod.POST,  "/loan-requests").hasRole("BORROWER")
@@ -77,24 +96,30 @@ public class SecurityConfig {
                         // ── ADMIN ONLY — View All Lender Preferences ──────────────────
                         .requestMatchers(HttpMethod.GET,   "/lender-preferences").hasRole("ADMIN")
 
+                        // ── ADMIN ONLY — Loan Management ──────────────────────────────
+                        .requestMatchers(HttpMethod.GET,  "/loans").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET,  "/loans/paged").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/loans/*/disburse").hasRole("ADMIN")
+
+                        // ── BORROWER ONLY — Loan Actions ──────────────────────────────
+                        .requestMatchers(HttpMethod.GET,  "/loans/my").hasRole("BORROWER")
+                        .requestMatchers(HttpMethod.POST, "/loans/*/pay-emi").hasRole("BORROWER")
+                        .requestMatchers(HttpMethod.POST, "/loans/*/foreclose").hasRole("BORROWER")
+                        .requestMatchers(HttpMethod.POST, "/loans/*/partial-repayment").hasRole("BORROWER")
+
+                        // ── LENDER ONLY — Funded Loans ────────────────────────────────
+                        .requestMatchers(HttpMethod.GET,  "/loans/funded").hasRole("LENDER")
+
+                        // ── SHARED — Loan Details & Schedule ──────────────────────────
+                        .requestMatchers(HttpMethod.GET,  "/loans/*").authenticated()
+                        .requestMatchers(HttpMethod.GET,  "/loans/*/schedule").authenticated()
+
                         // ── Everything else requires login ────────────────────────────
                         .anyRequest().authenticated()
                 )
-                .userDetailsService(userDetailsService)
-                .httpBasic(basic -> basic.authenticationEntryPoint(customAuthEntryPoint()));
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
-    }
-
-    @Bean
-    public AuthenticationEntryPoint customAuthEntryPoint() {
-        return (request, response, authException) -> {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write(
-                    "{\"success\":false,\"message\":\"Unauthorized: Please provide valid credentials\",\"data\":null}"
-            );
-        };
     }
 
     @Bean

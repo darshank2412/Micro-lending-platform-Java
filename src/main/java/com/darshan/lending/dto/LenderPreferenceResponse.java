@@ -1,6 +1,7 @@
 package com.darshan.lending.dto;
 
 import com.darshan.lending.entity.enums.RiskAppetite;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -22,4 +23,7 @@ public class LenderPreferenceResponse {
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    @Schema(example = "5",
+            description = "Lender prefers EMI payment on this day of month. Null = flexible.")
+    private Integer preferredPaymentDay;
 }

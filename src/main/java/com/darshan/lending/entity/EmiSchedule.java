@@ -59,4 +59,7 @@ public class EmiSchedule {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Column(name = "paid_amount", precision = 15, scale = 2)
+    private BigDecimal paidAmount;
 }

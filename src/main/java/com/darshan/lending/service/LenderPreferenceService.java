@@ -26,8 +26,8 @@ import java.util.stream.Collectors;
 public class LenderPreferenceService {
 
     private final LenderPreferenceRepository preferenceRepository;
-    private final UserRepository userRepository;
-    private final LoanProductRepository loanProductRepository;
+    private final UserRepository             userRepository;
+    private final LoanProductRepository      loanProductRepository;
 
     // ── LENDER: Save or update preference for a specific loan product ─────────
     @Transactional
@@ -39,15 +39,15 @@ public class LenderPreferenceService {
             throw new BusinessException("Only LENDER users can set lending preferences");
         }
 
-        LoanProduct loanProduct = loanProductRepository.findById(dto.getLoanProductId())
+        LoanProduct product = loanProductRepository.findById(dto.getLoanProductId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Loan product not found: " + dto.getLoanProductId()));
 
-        if (loanProduct.getStatus() != ProductStatus.ACTIVE) {
+        if (product.getStatus() != ProductStatus.ACTIVE) {
             throw new BusinessException("Loan product is not active");
         }
 
-        // Validate ranges
+        // ── Validate min < max within the DTO itself ──────────────────────
         if (dto.getMinInterestRate().compareTo(dto.getMaxInterestRate()) >= 0) {
             throw new BusinessException("Min interest rate must be less than max interest rate");
         }
@@ -58,30 +58,32 @@ public class LenderPreferenceService {
             throw new BusinessException("Min loan amount must be less than max loan amount");
         }
 
-        // Validate against loan product limits
-        if (dto.getMinLoanAmount().compareTo(loanProduct.getMinAmount()) < 0) {
-            throw new BusinessException("Min loan amount cannot be less than product minimum: "
-                    + loanProduct.getMinAmount());
+        // ── Validate against PRODUCT limits ──────────────────────────────
+        if (dto.getMinInterestRate().compareTo(product.getMinInterest()) < 0 ||
+                dto.getMaxInterestRate().compareTo(product.getMaxInterest()) > 0) {
+            throw new BusinessException(
+                    "Interest rate must be between " + product.getMinInterest()
+                            + "% and " + product.getMaxInterest() + "% for this product");
         }
-        if (dto.getMaxLoanAmount().compareTo(loanProduct.getMaxAmount()) > 0) {
-            throw new BusinessException("Max loan amount cannot exceed product maximum: "
-                    + loanProduct.getMaxAmount());
+        if (dto.getMinTenureMonths() < product.getMinTenure() ||
+                dto.getMaxTenureMonths() > product.getMaxTenure()) {
+            throw new BusinessException(
+                    "Tenure must be between " + product.getMinTenure()
+                            + " and " + product.getMaxTenure() + " months for this product");
         }
-        if (dto.getMinTenureMonths() < loanProduct.getMinTenure()) {
-            throw new BusinessException("Min tenure cannot be less than product minimum: "
-                    + loanProduct.getMinTenure());
-        }
-        if (dto.getMaxTenureMonths() > loanProduct.getMaxTenure()) {
-            throw new BusinessException("Max tenure cannot exceed product maximum: "
-                    + loanProduct.getMaxTenure());
+        if (dto.getMinLoanAmount().compareTo(product.getMinAmount()) < 0 ||
+                dto.getMaxLoanAmount().compareTo(product.getMaxAmount()) > 0) {
+            throw new BusinessException(
+                    "Loan amount must be between ₹" + product.getMinAmount()
+                            + " and ₹" + product.getMaxAmount() + " for this product");
         }
 
-        // Upsert — update if exists for this lender+product, create if not
+        // ── Upsert — update if exists, create if not ──────────────────────
         LenderPreference preference = preferenceRepository
                 .findByLenderIdAndLoanProductId(lenderId, dto.getLoanProductId())
                 .orElse(LenderPreference.builder()
                         .lender(lender)
-                        .loanProduct(loanProduct)
+                        .loanProduct(product)
                         .build());
 
         preference.setMinInterestRate(dto.getMinInterestRate());
@@ -91,6 +93,7 @@ public class LenderPreferenceService {
         preference.setMinLoanAmount(dto.getMinLoanAmount());
         preference.setMaxLoanAmount(dto.getMaxLoanAmount());
         preference.setRiskAppetite(dto.getRiskAppetite());
+        preference.setPreferredPaymentDay(dto.getPreferredPaymentDay());
         preference.setIsActive(true);
 
         LenderPreference saved = preferenceRepository.save(preference);
@@ -124,7 +127,7 @@ public class LenderPreferenceService {
         return toResponse(preferenceRepository.save(pref));
     }
 
-    // ── ADMIN: Get all active preferences ────────────────────────────────────
+    // ── ADMIN: Get all active preferences ─────────────────────────────────────
     @Transactional(readOnly = true)
     public List<LenderPreferenceResponse> getAllActive() {
         return preferenceRepository.findAll()
@@ -134,6 +137,7 @@ public class LenderPreferenceService {
                 .collect(Collectors.toList());
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
     private User findUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
@@ -154,6 +158,7 @@ public class LenderPreferenceService {
                 .maxLoanAmount(p.getMaxLoanAmount())
                 .riskAppetite(p.getRiskAppetite())
                 .isActive(p.getIsActive())
+                .preferredPaymentDay(p.getPreferredPaymentDay())
                 .createdAt(p.getCreatedAt())
                 .updatedAt(p.getUpdatedAt())
                 .build();

@@ -14,7 +14,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/loan-offers")
 @RequiredArgsConstructor
-@Tag(name = "10.Loan Offer", description = "Loan offer lifecycle — view, accept and reject matched loan offers")
+@Tag(name = "11.Loan Offer", description = "Loan offer lifecycle — view, accept and reject matched loan offers")
 public class LoanOfferController {
 
     private final LoanOfferService loanOfferService;

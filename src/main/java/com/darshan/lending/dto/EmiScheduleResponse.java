@@ -26,4 +26,8 @@ public class EmiScheduleResponse {
 
     /** emiAmount + penaltyAmount actually debited */
     private BigDecimal  totalPaid;
+
+
+    private BigDecimal shortfall;
+    private String message;
 }

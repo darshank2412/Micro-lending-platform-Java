@@ -29,6 +29,15 @@ public interface LoanSummaryRepository extends JpaRepository<LoanSummary, Long> 
             @Param("borrowerId") Long borrowerId,
             @Param("status") LoanStatus status);
 
+
+    @Query("SELECT COUNT(s) FROM LoanSummary s WHERE s.borrower.id = :borrowerId")
+    long countByBorrowerId(@Param("borrowerId") Long borrowerId);
+
+    @Query("SELECT COUNT(s) FROM LoanSummary s WHERE s.borrower.id = :borrowerId AND s.status = 'COMPLETED'")
+    long countCompletedByBorrowerId(@Param("borrowerId") Long borrowerId);
+
+    @Query("SELECT COUNT(s) FROM LoanSummary s WHERE s.borrower.id = :borrowerId AND s.status = 'ACTIVE'")
+    long countActiveByBorrowerId(@Param("borrowerId") Long borrowerId);
     /**
      * Bulk mark ACTIVE loans as DEFAULTED when they have at least one OVERDUE EMI.
      * Single JOIN query — avoids the N+1 loop in the original scheduler.

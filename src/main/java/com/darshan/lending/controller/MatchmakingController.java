@@ -14,7 +14,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/loan-requests")
 @RequiredArgsConstructor
-@Tag(name = "09.Matchmaking", description = "Admin triggers matchmaking engine to match loan requests with lenders")
+@Tag(name = "10.Matchmaking", description = "Admin triggers matchmaking engine to match loan requests with lenders")
 public class MatchmakingController {
 
     private final MatchmakingService matchmakingService;

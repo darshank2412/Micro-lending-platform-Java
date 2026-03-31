@@ -18,14 +18,14 @@ import java.util.List;
 @RestController
 @RequestMapping("/savings-products")
 @RequiredArgsConstructor
-@Tag(name = "06.Savings Product APIs", description = "Savings product CRUD — minBalance must be less than maxBalance")
+@Tag(name = "07.Savings Product APIs", description = "Savings product CRUD — minBalance must be less than maxBalance")
 public class SavingsProductController {
 
     private final SavingsProductService savingsProductService;
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    @SecurityRequirement(name = "basicAuth")
+//    @SecurityRequirement(name = "basicAuth")
     @Operation(summary = "Create savings product (ADMIN only)")
     public ResponseEntity<ApiResponse<SavingsProductResponse>> create(
             @Valid @RequestBody SavingsProductRequest request) {
