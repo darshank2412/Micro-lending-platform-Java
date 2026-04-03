@@ -1,3 +1,6 @@
 # Project exclude paths
 /target/
 /target/classes/
+logs/
+target/
+*.log
