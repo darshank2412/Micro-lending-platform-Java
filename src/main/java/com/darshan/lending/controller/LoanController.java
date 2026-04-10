@@ -41,7 +41,10 @@ public class LoanController {
     )
     @PostMapping("/{offerId}/disburse")
     public ResponseEntity<LoanSummaryResponse> disburseLoan(
-            @PathVariable Long offerId) {
+            @PathVariable Long offerId,
+    @RequestHeader(value = "Idempotency-Key", required = false)
+    String idempotencyKey)
+    {
         return ResponseEntity.ok(loanDisbursementService.disburseLoan(offerId));
     }
 
@@ -123,7 +126,9 @@ public class LoanController {
     public ResponseEntity<EmiScheduleResponse> payEmi(
             @PathVariable Long loanSummaryId,
             @RequestParam Long borrowerId,
-            @RequestParam BigDecimal amount) {
+            @RequestParam BigDecimal amount,
+            @RequestHeader(value = "Idempotency-Key", required = false)
+            String idempotencyKey){
         return ResponseEntity.ok(emiPaymentService.payEmi(loanSummaryId, borrowerId, amount));
     }
 

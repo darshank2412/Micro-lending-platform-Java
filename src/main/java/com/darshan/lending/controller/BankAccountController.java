@@ -58,7 +58,9 @@ public class BankAccountController {
     @Operation(summary = "Deposit into savings account")
     public ResponseEntity<ApiResponse<BankAccountResponse>> deposit(
             @PathVariable Long accountId,
-            @Valid @RequestBody DepositWithdrawRequest request) {
+            @Valid @RequestBody DepositWithdrawRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false)
+            String idempotencyKey){
         return ResponseEntity.ok(ApiResponse.success("Deposit successful",
                 bankAccountService.deposit(accountId, request.getAmount())));
     }
@@ -67,7 +69,9 @@ public class BankAccountController {
     @Operation(summary = "Withdraw from savings account")
     public ResponseEntity<ApiResponse<BankAccountResponse>> withdraw(
             @PathVariable Long accountId,
-            @Valid @RequestBody DepositWithdrawRequest request) {
+            @Valid @RequestBody DepositWithdrawRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false)
+            String idempotencyKey){
         return ResponseEntity.ok(ApiResponse.success("Withdrawal successful",
                 bankAccountService.withdraw(accountId, request.getAmount())));
     }

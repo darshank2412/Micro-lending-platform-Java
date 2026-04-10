@@ -95,7 +95,6 @@
             <scope>test</scope>
         </dependency>
 
-
         <!-- JWT -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -120,7 +119,7 @@
     <build>
         <plugins>
 
-            <!-- Compiler Plugin (fixed) -->
+            <!-- Compiler Plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -144,29 +143,58 @@
                 <version>0.8.10</version>
                 <executions>
 
-                    <!-- Attach JaCoCo agent -->
+                    <!-- 1. Attach JaCoCo agent before tests -->
                     <execution>
                         <goals>
                             <goal>prepare-agent</goal>
                         </goals>
                     </execution>
 
-                    <!-- Generate report after tests -->
+                    <!-- 2. Generate HTML report after tests -->
                     <execution>
                         <id>report</id>
-                        <phase>verify</phase>
+                        <phase>test</phase>
                         <goals>
                             <goal>report</goal>
                         </goals>
                         <configuration>
                             <excludes>
                                 <exclude>com/darshan/lending/dto/**</exclude>
-                                <exclude>com.darshan/lending/entity/**</exclude>
-
+                                <exclude>com/darshan/lending/entity/**</exclude>
                                 <exclude>com/darshan/lending/exception/**</exclude>
                                 <exclude>com/darshan/lending/enums/**</exclude>
                                 <exclude>com/darshan/lending/security/**</exclude>
                             </excludes>
+                        </configuration>
+                    </execution>
+
+                    <!-- 3. Enforce minimum 70% line coverage -->
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>com/darshan/lending/dto/**</exclude>
+                                <exclude>com/darshan/lending/entity/**</exclude>
+                                <exclude>com/darshan/lending/exception/**</exclude>
+                                <exclude>com/darshan/lending/enums/**</exclude>
+                                <exclude>com/darshan/lending/security/**</exclude>
+                            </excludes>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.70</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
                         </configuration>
                     </execution>
 
@@ -175,8 +203,5 @@
 
         </plugins>
     </build>
-
-
-
 
 </project>

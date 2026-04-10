@@ -1,5 +1,6 @@
 package com.darshan.lending.config;
 
+import com.darshan.lending.idempotency.IdempotencyFilter;
 import com.darshan.lending.repository.UserRepository;
 import com.darshan.lending.security.CustomUserDetailsService;
 import com.darshan.lending.security.JwtAuthFilter;
@@ -25,6 +26,7 @@ public class SecurityConfig {
 
     private final CustomUserDetailsService userDetailsService;
     private final JwtAuthFilter            jwtAuthFilter;
+    private final IdempotencyFilter        idempotencyFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -117,6 +119,11 @@ public class SecurityConfig {
                         // ── Everything else requires login ────────────────────────────
                         .anyRequest().authenticated()
                 )
+
+                // ── Idempotency filter runs before JWT filter ─────────────────────
+                .addFilterBefore(idempotencyFilter, UsernamePasswordAuthenticationFilter.class)
+
+                // ── JWT filter ────────────────────────────────────────────────────
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
