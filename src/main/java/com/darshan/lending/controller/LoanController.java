@@ -24,7 +24,7 @@ import java.util.List;
 public class LoanController {
 
     private final LoanDisbursementService loanDisbursementService;
-    private final EmiPaymentService       emiPaymentService;
+    private final EmiPaymentService emiPaymentService;
 
     // ── ADMIN ─────────────────────────────────────────────────────────────────
 

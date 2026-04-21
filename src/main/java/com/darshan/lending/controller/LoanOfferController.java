@@ -85,4 +85,7 @@ public class LoanOfferController {
         return ResponseEntity.ok(
                 loanOfferService.rejectOffer(borrowerId, offerId, reason));
     }
+
+
+
 }

@@ -19,10 +19,10 @@ public interface EmiScheduleRepository extends JpaRepository<EmiSchedule, Long> 
     @Query("SELECT e FROM EmiSchedule e " +
             "WHERE e.loanSummary.id = :loanSummaryId " +
             "AND e.status IN (com.darshan.lending.entity.enums.EmiStatus.PENDING, " +
-            "                 com.darshan.lending.entity.enums.EmiStatus.OVERDUE) " +
+            "                 com.darshan.lending.entity.enums.EmiStatus.OVERDUE, " +
+            "                 com.darshan.lending.entity.enums.EmiStatus.PARTIAL) " +
             "ORDER BY e.emiNumber ASC")
-    List<EmiSchedule> findPendingOrOverdueEmis(
-            @Param("loanSummaryId") Long loanSummaryId);
+    List<EmiSchedule> findPendingOrOverdueEmis(@Param("loanSummaryId") Long loanSummaryId);
 
     @Query("SELECT e FROM EmiSchedule e " +
             "WHERE e.loanSummary.id = :loanSummaryId " +
@@ -46,20 +46,85 @@ public interface EmiScheduleRepository extends JpaRepository<EmiSchedule, Long> 
             @Param("oldStatus") EmiStatus oldStatus,
             @Param("newStatus") EmiStatus newStatus);
 
-    // ── Per loan ──────────────────────────────────────────────────────────
     @Query("SELECT COUNT(e) FROM EmiSchedule e " +
             "WHERE e.loanSummary.id = :loanSummaryId AND e.status = :status")
     int countPaidEmis(
             @Param("loanSummaryId") Long loanSummaryId,
             @Param("status") EmiStatus status);
 
-    // ── Per borrower (used by CreditScoreService) ─────────────────────────
     @Query("SELECT COUNT(e) FROM EmiSchedule e " +
             "JOIN e.loanSummary s WHERE s.borrower.id = :borrowerId AND e.status = :status")
     int countPaidEmisByBorrower(
             @Param("borrowerId") Long borrowerId,
             @Param("status") EmiStatus status);
 
-    @Query("SELECT COUNT(e) FROM EmiSchedule e JOIN e.loanSummary s WHERE s.borrower.id = :borrowerId")
+    // ── Used by CreditScoreService ────────────────────────────────────────────
+
+    @Query("SELECT COUNT(e) FROM EmiSchedule e " +
+            "JOIN e.loanSummary s WHERE s.borrower.id = :borrowerId")
     long countTotalEmisByBorrower(@Param("borrowerId") Long borrowerId);
+
+    long countByStatus(EmiStatus status);
+
+    // ── ADDITION: Loan statement aggregation ──────────────────────────────────
+
+    /**
+     * Sum of totalPaid across all PAID EMIs for a loan — the actual amount
+     * debited from the borrower so far (includes penalties).
+     */
+    @Query("SELECT COALESCE(SUM(e.totalPaid), 0) FROM EmiSchedule e " +
+            "WHERE e.loanSummary.id = :loanSummaryId AND e.status = 'PAID'")
+    java.math.BigDecimal sumTotalPaidByLoan(@Param("loanSummaryId") Long loanSummaryId);
+
+    /**
+     * Sum of interestComponent across all PAID EMIs for a loan.
+     */
+    @Query("SELECT COALESCE(SUM(e.interestComponent), 0) FROM EmiSchedule e " +
+            "WHERE e.loanSummary.id = :loanSummaryId AND e.status = 'PAID'")
+    java.math.BigDecimal sumInterestPaidByLoan(@Param("loanSummaryId") Long loanSummaryId);
+
+    /**
+     * Sum of principalComponent across all PAID EMIs for a loan.
+     */
+    @Query("SELECT COALESCE(SUM(e.principalComponent), 0) FROM EmiSchedule e " +
+            "WHERE e.loanSummary.id = :loanSummaryId AND e.status = 'PAID'")
+    java.math.BigDecimal sumPrincipalPaidByLoan(@Param("loanSummaryId") Long loanSummaryId);
+
+    // ── ADDITION: Upcoming EMIs for borrower (next 7 days) ───────────────────
+
+    /**
+     * Returns all PENDING EMIs for a given borrower where the due date falls
+     * within the next 7 days (inclusive of today and the cutoff date).
+     * Used by GET /loans/upcoming-emis?borrowerId=X
+     */
+    @Query("SELECT e FROM EmiSchedule e " +
+            "JOIN e.loanSummary s " +
+            "WHERE s.borrower.id = :borrowerId " +
+            "AND e.status = com.darshan.lending.entity.enums.EmiStatus.PENDING " +
+            "AND e.dueDate >= :today " +
+            "AND e.dueDate <= :cutoff " +
+            "ORDER BY e.dueDate ASC")
+    List<EmiSchedule> findUpcomingEmisByBorrower(
+            @Param("borrowerId") Long borrowerId,
+            @Param("today") LocalDate today,
+            @Param("cutoff") LocalDate cutoff);
+
+    // ── ADDITION: Upcoming collections for lender (next 7 days) ──────────────
+
+    /**
+     * Returns all PENDING EMIs for a given lender where the due date falls
+     * within the next 7 days (inclusive of today and the cutoff date).
+     * Used by GET /loans/upcoming-collections?lenderId=X
+     */
+    @Query("SELECT e FROM EmiSchedule e " +
+            "JOIN e.loanSummary s " +
+            "WHERE s.lender.id = :lenderId " +
+            "AND e.status = com.darshan.lending.entity.enums.EmiStatus.PENDING " +
+            "AND e.dueDate >= :today " +
+            "AND e.dueDate <= :cutoff " +
+            "ORDER BY e.dueDate ASC")
+    List<EmiSchedule> findUpcomingCollectionsByLender(
+            @Param("lenderId") Long lenderId,
+            @Param("today") LocalDate today,
+            @Param("cutoff") LocalDate cutoff);
 }

@@ -116,8 +116,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,  "/loans/*").authenticated()
                         .requestMatchers(HttpMethod.GET,  "/loans/*/schedule").authenticated()
 
+
+                                .requestMatchers(HttpMethod.POST, "/notifications/emi-reminder/**").authenticated()
+                                .requestMatchers(HttpMethod.POST, "/notifications/emi-reminder/bulk").hasRole("ADMIN")
                         // ── Everything else requires login ────────────────────────────
                         .anyRequest().authenticated()
+
+                        // Notifications
+
                 )
 
                 // ── Idempotency filter runs before JWT filter ─────────────────────
@@ -144,3 +150,5 @@ public class SecurityConfig {
         };
     }
 }
+
+

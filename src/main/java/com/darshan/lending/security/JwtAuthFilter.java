@@ -6,19 +6,19 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
 
 @Component
 @RequiredArgsConstructor
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+    private final CustomUserDetailsService userDetailsService; // ✅ ADD THIS
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -33,13 +33,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
             if (jwtUtil.isTokenValid(token)) {
                 String username = jwtUtil.extractUsername(token);
-                String role     = jwtUtil.extractRole(token);
+
+                // ✅ Load full UserDetails so @AuthenticationPrincipal works
+                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
                 UsernamePasswordAuthenticationToken auth =
                         new UsernamePasswordAuthenticationToken(
-                                username,
+                                userDetails,        // ✅ principal is now UserDetails
                                 null,
-                                List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                                userDetails.getAuthorities()  // ✅ use authorities from UserDetails
                         );
 
                 SecurityContextHolder.getContext().setAuthentication(auth);

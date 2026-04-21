@@ -1,7 +1,6 @@
 package com.darshan.lending.controller;
 
 import com.darshan.lending.dto.*;
-import com.darshan.lending.entity.KycDocument;
 import com.darshan.lending.entity.User;
 import com.darshan.lending.entity.enums.*;
 import com.darshan.lending.repository.UserRepository;
@@ -110,7 +109,8 @@ class KycControllerTest {
     @Test
     @DisplayName("PATCH /kyc/approve/{docId} → 200 and status VERIFIED")
     void approveKyc_shouldReturn200() throws Exception {
-        KycDocument doc = submitAadhaar("111122223333");
+        // FIX: was KycDocument, now KycDocumentResponse
+        KycDocumentResponse doc = submitAadhaar("111122223333");
         mockMvc.perform(patch("/kyc/approve/{docId}", doc.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("VERIFIED"));
@@ -128,7 +128,8 @@ class KycControllerTest {
     @Test
     @DisplayName("PATCH /kyc/reject/{docId} → 200 and status REJECTED")
     void rejectKyc_shouldReturn200() throws Exception {
-        KycDocument doc = submitPan("ABCDE1234F");
+        // FIX: was KycDocument, now KycDocumentResponse
+        KycDocumentResponse doc = submitPan("ABCDE1234F");
         mockMvc.perform(patch("/kyc/reject/{docId}", doc.getId())
                         .param("reason", "Blurry image"))
                 .andExpect(status().isOk())
@@ -145,12 +146,14 @@ class KycControllerTest {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private KycDocument submitAadhaar(String number) {
+    // FIX: return type was KycDocument, now KycDocumentResponse
+    private KycDocumentResponse submitAadhaar(String number) {
         return kycService.submitDocument(testUser.getId(), KycSubmitRequest.builder()
                 .documentType(DocumentType.AADHAAR).documentNumber(number).build());
     }
 
-    private KycDocument submitPan(String number) {
+    // FIX: return type was KycDocument, now KycDocumentResponse
+    private KycDocumentResponse submitPan(String number) {
         return kycService.submitDocument(testUser.getId(), KycSubmitRequest.builder()
                 .documentType(DocumentType.PAN).documentNumber(number).build());
     }

@@ -70,7 +70,7 @@ public class LoanProductController {
     }
 
     @Operation(summary = "Get all active loan products (paginated)")
-    @GetMapping("/loan-products/paged")
+    @GetMapping("/paged")
     public ResponseEntity<Page<LoanProductResponse>> getLoanProductsPaged(Pageable pageable) {
         return ResponseEntity.ok(loanProductService.findAllPaged(pageable));
     }

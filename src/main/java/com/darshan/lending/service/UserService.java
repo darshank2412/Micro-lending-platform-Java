@@ -83,7 +83,6 @@ public class UserService {
         User saved = userRepository.save(user);
         log.info("Registration complete for userId={}", saved.getId());
 
-        // Auto-create platform wallet
         String accountNumber = "MLP" + String.format("%08d", saved.getId());
 
         BankAccount wallet = BankAccount.builder()
@@ -106,21 +105,36 @@ public class UserService {
 
     // ── Profile ───────────────────────────────────────────────────────────────
 
-    @Transactional
-    public UserResponse updateProfile(Long userId, UserProfileUpdateRequest req) {
-
-        User user = findUserById(userId);
-
-        if (req.getFullName() != null) user.setFullName(req.getFullName());
-        if (req.getEmail() != null) user.setEmail(req.getEmail());
-        if (req.getGender() != null) user.setGender(req.getGender());
-
-        return toResponse(userRepository.save(user));
-    }
-
     @Transactional(readOnly = true)
     public UserResponse getById(Long userId) {
         return toResponse(findUserById(userId));
+    }
+
+    @Transactional
+    public UserResponse updateProfileByPhone(String phoneNumber, UserProfileUpdateRequest req) {
+
+        User user = userRepository.findByPhoneNumber(phoneNumber)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("User not found with phone number: " + phoneNumber));
+
+        if (req.getFullName() != null) user.setFullName(req.getFullName());
+        if (req.getEmail()    != null) user.setEmail(req.getEmail());
+        if (req.getGender()   != null) user.setGender(req.getGender());
+
+        User savedUser = userRepository.save(user);
+        log.info("Profile updated for user phone={}", phoneNumber);
+
+        return toResponse(savedUser);
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponse getByPhone(String phoneNumber) {
+
+        User user = userRepository.findByPhoneNumber(phoneNumber)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("User not found with phone number: " + phoneNumber));
+
+        return toResponse(user);
     }
 
     // ── Admin Management ──────────────────────────────────────────────────────
@@ -148,9 +162,7 @@ public class UserService {
                 .build();
 
         admin.setPhoneNumber(request.getPhoneNumber());
-
         userRepository.save(admin);
-
         log.info("New admin created: phone={}", request.getPhoneNumber());
 
         return toResponse(admin);
@@ -175,12 +187,10 @@ public class UserService {
         }
 
         userRepository.delete(user);
-
         log.info("Admin deleted: userId={}", userId);
     }
 
     public List<UserResponse> getAllAdmins() {
-
         return userRepository.findAllByRole(Role.ADMIN)
                 .stream()
                 .map(this::toResponse)
@@ -190,7 +200,6 @@ public class UserService {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     public User findUserById(Long userId) {
-
         return userRepository.findById(userId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("User not found: " + userId));
@@ -229,39 +238,9 @@ public class UserService {
                 .kycStatus(u.getKycStatus())
                 .incomeBracket(u.getIncomeBracket())
                 .p2pExperience(u.getP2pExperience())
-//                .emailVerified(u.getEmailVerified())
-//                .phoneVerified(u.getPhoneVerified())
                 .address(addressDto)
                 .platformAccountNumber(platformAccountNumber)
                 .createdAt(u.getCreatedAt())
                 .build();
-    }
-
-    @Transactional
-    public UserResponse updateProfileByPhone(String phoneNumber, UserProfileUpdateRequest req) {
-
-        User user = userRepository.findByPhoneNumber(phoneNumber)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("User not found with phone number: " + phoneNumber));
-
-        if (req.getFullName() != null) user.setFullName(req.getFullName());
-        if (req.getEmail() != null) user.setEmail(req.getEmail());
-        if (req.getGender() != null) user.setGender(req.getGender());
-
-        User savedUser = userRepository.save(user);
-
-        log.info("Profile updated for user phone={}", phoneNumber);
-
-        return toResponse(savedUser);
-    }
-
-    @Transactional(readOnly = true)
-    public UserResponse getByPhone(String phoneNumber) {
-
-        User user = userRepository.findByPhoneNumber(phoneNumber)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("User not found with phone number: " + phoneNumber));
-
-        return toResponse(user);
     }
 }

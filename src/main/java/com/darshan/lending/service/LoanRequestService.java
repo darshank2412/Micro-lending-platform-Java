@@ -33,21 +33,25 @@ public class LoanRequestService {
     private final UserRepository             userRepository;
     private final LoanProductRepository      loanProductRepository;
     private final LenderPreferenceRepository lenderPreferenceRepository;
+    private final AuditLogService            auditLogService;
 
     // ── BORROWER: Submit a loan request ──────────────────────────────────────
+
     @Transactional
     public LoanRequestResponse createRequest(Long borrowerId, LoanRequestDto dto) {
 
         User borrower = findUser(borrowerId);
 
         if (borrower.getRole() != Role.BORROWER) {
-            throw new BusinessException("Only BORROWER users can submit loan requests");
+            throw new BusinessException(
+                    "Only BORROWER users can submit loan requests");
         }
 
         if (loanRequestRepository.existsByBorrowerIdAndStatus(
                 borrowerId, LoanRequestStatus.PENDING)) {
             throw new BusinessException(
-                    "You already have a PENDING loan request. Cancel it before raising a new one.");
+                    "You already have a PENDING loan request. "
+                            + "Cancel it before raising a new one.");
         }
 
         LoanProduct product = loanProductRepository.findById(dto.getLoanProductId())
@@ -84,40 +88,77 @@ public class LoanRequestService {
                 .build();
 
         LoanRequest saved = loanRequestRepository.save(request);
-        log.info("Loan request created: id={} borrower={}", saved.getId(), borrowerId);
+
+        // ── Audit: loan request created ───────────────────────────────────
+        auditLogService.log(
+                borrowerId,
+                "BORROWER",
+                borrower.getFullName(),
+                AuditLogService.ACTION_LOAN_REQUEST_CREATED,
+                AuditLogService.RESOURCE_REQUEST,
+                saved.getId(),
+                "Amount: " + dto.getAmount()
+                        + " | Tenure: " + dto.getTenureMonths() + " months"
+                        + " | Purpose: " + dto.getPurpose()
+                        + " | Product: " + product.getName(),
+                "SUCCESS"
+        );
+
+        log.info("Loan request created: id={} borrower={}",
+                saved.getId(), borrowerId);
         return toResponse(saved);
     }
 
     // ── BORROWER: Get my loan requests ────────────────────────────────────────
+
     @Transactional(readOnly = true)
     public List<LoanRequestResponse> getMyRequests(Long borrowerId) {
         User borrower = findUser(borrowerId);
         if (borrower.getRole() != Role.BORROWER) {
-            throw new BusinessException("Only BORROWER users can view loan requests");
+            throw new BusinessException(
+                    "Only BORROWER users can view loan requests");
         }
         return loanRequestRepository.findByBorrowerId(borrowerId)
                 .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
     // ── BORROWER: Cancel a pending request ───────────────────────────────────
+
     @Transactional
     public LoanRequestResponse cancelRequest(Long borrowerId, Long requestId) {
 
         LoanRequest request = findRequest(requestId);
 
         if (!request.getBorrower().getId().equals(borrowerId)) {
-            throw new BusinessException("You can only cancel your own loan requests");
+            throw new BusinessException(
+                    "You can only cancel your own loan requests");
         }
 
-        // ── State machine validation ──────────────────────────────────────
-        LoanStateMachine.validateTransition(request.getStatus(), LoanRequestStatus.CANCELLED);
+        LoanStateMachine.validateTransition(
+                request.getStatus(), LoanRequestStatus.CANCELLED);
 
         request.setStatus(LoanRequestStatus.CANCELLED);
+
+        LoanRequest saved = loanRequestRepository.save(request);
+
+        // ── Audit: loan request cancelled ─────────────────────────────────
+        auditLogService.log(
+                borrowerId,
+                "BORROWER",
+                request.getBorrower().getFullName(),
+                AuditLogService.ACTION_LOAN_REQUEST_CANCELLED,
+                AuditLogService.RESOURCE_REQUEST,
+                requestId,
+                "Request cancelled by borrower",
+                "CANCELLED"
+        );
+
         log.info("Loan request cancelled: id={}", requestId);
-        return toResponse(loanRequestRepository.save(request));
+        return toResponse(saved);
     }
 
     // ── ADMIN: Get all requests (optionally by status) ────────────────────────
+
     @Transactional(readOnly = true)
     public List<LoanRequestResponse> getAllRequests(LoanRequestStatus status) {
         List<LoanRequest> requests = (status != null)
@@ -127,13 +168,14 @@ public class LoanRequestService {
     }
 
     // ── ADMIN: Mark a request as MATCHED ─────────────────────────────────────
+
     @Transactional
     public LoanRequestResponse markAsMatched(Long requestId) {
 
         LoanRequest request = findRequest(requestId);
 
-        // ── State machine validation ──────────────────────────────────────
-        LoanStateMachine.validateTransition(request.getStatus(), LoanRequestStatus.MATCHED);
+        LoanStateMachine.validateTransition(
+                request.getStatus(), LoanRequestStatus.MATCHED);
 
         request.setStatus(LoanRequestStatus.MATCHED);
         log.info("Loan request matched: id={}", requestId);
@@ -141,13 +183,14 @@ public class LoanRequestService {
     }
 
     // ── ADMIN: Reject a loan request ─────────────────────────────────────────
+
     @Transactional
     public LoanRequestResponse rejectRequest(Long requestId, String reason) {
 
         LoanRequest request = findRequest(requestId);
 
-        // ── State machine validation ──────────────────────────────────────
-        LoanStateMachine.validateTransition(request.getStatus(), LoanRequestStatus.REJECTED);
+        LoanStateMachine.validateTransition(
+                request.getStatus(), LoanRequestStatus.REJECTED);
 
         request.setStatus(LoanRequestStatus.REJECTED);
         request.setRejectionReason(reason);
@@ -156,22 +199,28 @@ public class LoanRequestService {
     }
 
     // ── LENDER: Browse all PENDING loan requests ──────────────────────────────
+
     @Transactional(readOnly = true)
     public List<LoanRequestResponse> getOpenRequests(Long lenderId) {
         User lender = findUser(lenderId);
         if (lender.getRole() != Role.LENDER) {
-            throw new BusinessException("Only LENDER users can browse loan requests");
+            throw new BusinessException(
+                    "Only LENDER users can browse loan requests");
         }
         return loanRequestRepository.findByStatus(LoanRequestStatus.PENDING)
                 .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
-    // ── LENDER: Browse PENDING requests matching his saved preferences ────────
+    // ── LENDER: Browse PENDING requests matching preferences ─────────────────
+
     @Transactional(readOnly = true)
-    public List<LoanRequestResponse> getRequestsMatchingLenderPreference(Long lenderId) {
+    public List<LoanRequestResponse> getRequestsMatchingLenderPreference(
+            Long lenderId) {
+
         User lender = findUser(lenderId);
         if (lender.getRole() != Role.LENDER) {
-            throw new BusinessException("Only LENDER users can browse loan requests");
+            throw new BusinessException(
+                    "Only LENDER users can browse loan requests");
         }
 
         List<LenderPreference> preferences = lenderPreferenceRepository
@@ -179,34 +228,38 @@ public class LoanRequestService {
 
         if (preferences.isEmpty()) {
             throw new BusinessException(
-                    "No active preferences found. Please set your lending preferences first.");
+                    "No active preferences found. "
+                            + "Please set your lending preferences first.");
         }
 
         return preferences.stream()
-                .flatMap(preference -> loanRequestRepository.findPendingMatchingPreference(
-                        preference.getMinLoanAmount(),
-                        preference.getMaxLoanAmount(),
-                        preference.getMinTenureMonths(),
-                        preference.getMaxTenureMonths()).stream())
+                .flatMap(preference -> loanRequestRepository
+                        .findPendingMatchingPreference(
+                                preference.getMinLoanAmount(),
+                                preference.getMaxLoanAmount(),
+                                preference.getMinTenureMonths(),
+                                preference.getMaxTenureMonths()).stream())
                 .distinct()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
     // ── LENDER: Accept a matched loan request ────────────────────────────────
+
     @Transactional
     public LoanRequestResponse acceptRequest(Long lenderId, Long requestId) {
 
         User lender = findUser(lenderId);
 
         if (lender.getRole() != Role.LENDER) {
-            throw new BusinessException("Only LENDER users can accept loan requests");
+            throw new BusinessException(
+                    "Only LENDER users can accept loan requests");
         }
 
         LoanRequest request = findRequest(requestId);
 
-        // ── State machine validation ──────────────────────────────────────
-        LoanStateMachine.validateTransition(request.getStatus(), LoanRequestStatus.ACCEPTED);
+        LoanStateMachine.validateTransition(
+                request.getStatus(), LoanRequestStatus.ACCEPTED);
 
         request.setStatus(LoanRequestStatus.ACCEPTED);
         log.info("Loan request accepted: id={} lender={}", requestId, lenderId);
@@ -214,15 +267,38 @@ public class LoanRequestService {
     }
 
     // ── Get single request by ID ──────────────────────────────────────────────
+
     @Transactional(readOnly = true)
     public LoanRequestResponse getById(Long requestId) {
         return toResponse(findRequest(requestId));
     }
 
+    // ── NEW: Get raw entity (used by tests and other services) ────────────────
+
+    public LoanRequest getRequestEntity(Long requestId) {
+        return loanRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Loan request not found: " + requestId));
+    }
+
+    // ── NEW: Mark request as DISBURSED ────────────────────────────────────────
+
+    @Transactional
+    public void markDisbursed(Long requestId) {
+        LoanRequest request = getRequestEntity(requestId);
+        LoanStateMachine.validateTransition(
+                request.getStatus(), LoanRequestStatus.DISBURSED);
+        request.setStatus(LoanRequestStatus.DISBURSED);
+        loanRequestRepository.save(request);
+        log.info("Loan request marked as DISBURSED: id={}", requestId);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
     private User findUser(Long userId) {
         return userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "User not found: " + userId));
     }
 
     private LoanRequest findRequest(Long requestId) {

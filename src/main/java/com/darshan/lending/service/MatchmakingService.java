@@ -40,7 +40,7 @@ public class MatchmakingService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Loan request not found: " + requestId));
 
-        if (request.getStatus() != LoanRequestStatus.PENDING) {
+        if ( LoanRequestStatus.PENDING != request.getStatus() ) {
             throw new BusinessException(
                     "Only PENDING requests can be matched. Current: " + request.getStatus());
         }

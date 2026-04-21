@@ -56,14 +56,7 @@ public class UserController {
                 userService.getById(id)));
     }
 
-    @PutMapping("/users/profile")
-    @Operation(summary = "Update profile by userId param")
-    public ResponseEntity<ApiResponse<UserResponse>> updateProfileById(
-            @RequestParam Long userId,
-            @Valid @RequestBody UserProfileUpdateRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Profile updated",
-                userService.updateProfile(userId, request)));
-    }
+
 
     @PostMapping("/admin")
     @PreAuthorize("hasRole('ADMIN')")

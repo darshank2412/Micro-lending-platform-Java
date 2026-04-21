@@ -1,5 +1,7 @@
 package com.darshan.lending.service;
 
+import com.darshan.lending.dto.BorrowerSummary;
+import com.darshan.lending.dto.CreditScoreResponse;
 import com.darshan.lending.dto.LoanOfferResponse;
 import com.darshan.lending.entity.LoanOffer;
 import com.darshan.lending.entity.LoanRequest;
@@ -29,6 +31,9 @@ public class LoanOfferService {
     private final LoanOfferRepository   loanOfferRepository;
     private final LoanRequestRepository loanRequestRepository;
     private final UserRepository        userRepository;
+    private final CreditScoreService    creditScoreService;   // ← NEW: for borrowerSummary
+
+    // ── Borrower: view offers for their request ───────────────────────────────
 
     @Transactional(readOnly = true)
     public List<LoanOfferResponse> getOffersForRequest(Long borrowerId, Long requestId) {
@@ -43,8 +48,10 @@ public class LoanOfferService {
             throw new BusinessException("You can only view offers on your own loan requests");
         }
         return loanOfferRepository.findRankedOffersForRequest(requestId)
-                .stream().map(this::toResponse).collect(Collectors.toList());
+                .stream().map(o -> toResponse(o, false)).collect(Collectors.toList());
     }
+
+    // ── Borrower: accept an offer ─────────────────────────────────────────────
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public LoanOfferResponse acceptOffer(Long borrowerId, Long offerId) {
@@ -77,18 +84,22 @@ public class LoanOfferService {
         offer.setStatus(LoanOfferStatus.ACCEPTED);
         loanOfferRepository.save(offer);
 
-        request.setStatus(LoanRequestStatus. DISBURSED );
+        // ── FIX 4: Status must be ACCEPTED here, NOT DISBURSED.
+        //    DISBURSED is only set by the admin disburse endpoint. ─────────────
+        request.setStatus(LoanRequestStatus.ACCEPTED);
         loanRequestRepository.save(request);
 
         int rejected = loanOfferRepository.bulkRejectOtherOffers(
                 request.getId(), offerId);
         log.info("Auto-rejected {} other offers for request id={}", rejected, request.getId());
 
-        log.info("Offer id={} ACCEPTED by borrower={}, request={} → FUNDED",
+        log.info("Offer id={} ACCEPTED by borrower={}, request={} → ACCEPTED",
                 offerId, borrowerId, request.getId());
 
-        return toResponse(offer);
+        return toResponse(offer, false);
     }
+
+    // ── Borrower: reject an offer ─────────────────────────────────────────────
 
     @Transactional
     public LoanOfferResponse rejectOffer(Long borrowerId, Long offerId, String reason) {
@@ -118,8 +129,10 @@ public class LoanOfferService {
         loanOfferRepository.save(offer);
 
         log.info("Offer id={} REJECTED by borrower={}", offerId, borrowerId);
-        return toResponse(offer);
+        return toResponse(offer, false);
     }
+
+    // ── Lender: view my offers (with borrowerSummary) ─────────────────────────
 
     @Transactional(readOnly = true)
     public List<LoanOfferResponse> getMyOffers(Long lenderId) {
@@ -127,15 +140,20 @@ public class LoanOfferService {
         if (lender.getRole() != Role.LENDER) {
             throw new BusinessException("Only LENDER users can view their offers");
         }
+        // ── ADDITION: pass includeBorrowerSummary=true for lender-facing calls ─
         return loanOfferRepository.findByLenderId(lenderId)
-                .stream().map(this::toResponse).collect(Collectors.toList());
+                .stream().map(o -> toResponse(o, true)).collect(Collectors.toList());
     }
+
+    // ── Admin: view all offers for a request ─────────────────────────────────
 
     @Transactional(readOnly = true)
     public List<LoanOfferResponse> adminGetOffersForRequest(Long requestId) {
         return loanOfferRepository.findRankedOffersForRequest(requestId)
-                .stream().map(this::toResponse).collect(Collectors.toList());
+                .stream().map(o -> toResponse(o, false)).collect(Collectors.toList());
     }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private User findUser(Long userId) {
         return userRepository.findById(userId)
@@ -143,8 +161,15 @@ public class LoanOfferService {
                         "User not found: " + userId));
     }
 
-    public LoanOfferResponse toResponse(LoanOffer o) {
-        return LoanOfferResponse.builder()
+    /**
+     * Maps a LoanOffer to the response DTO.
+     *
+     * @param includeBorrowerSummary true when called from lender-facing endpoints —
+     *                               populates the nested borrowerSummary block.
+     */
+    public LoanOfferResponse toResponse(LoanOffer o, boolean includeBorrowerSummary) {
+
+        LoanOfferResponse.LoanOfferResponseBuilder builder = LoanOfferResponse.builder()
                 .id(o.getId())
                 .loanRequestId(o.getLoanRequest().getId())
                 .loanAmount(o.getLoanAmount())
@@ -155,7 +180,32 @@ public class LoanOfferService {
                 .matchRank(o.getMatchRank())
                 .rejectionReason(o.getRejectionReason())
                 .createdAt(o.getCreatedAt())
-                .updatedAt(o.getUpdatedAt())
-                .build();
+                .updatedAt(o.getUpdatedAt());
+
+        // ── ADDITION: populate borrowerSummary for lender ─────────────────────
+        if (includeBorrowerSummary) {
+            Long borrowerId = o.getLoanRequest().getBorrower().getId();
+            LoanRequest req = o.getLoanRequest();
+
+            CreditScoreResponse credit = creditScoreService.calculateScore(borrowerId);
+
+            BorrowerSummary summary = BorrowerSummary.builder()
+                    .creditScore(credit.getScore())
+                    .grade(credit.getGrade())
+                    .kycStatus(o.getLoanRequest().getBorrower().getKycStatus().name())
+                    .loanPurpose(req.getPurpose() != null ? req.getPurpose().name() : null)
+                    .build();
+
+            builder.borrowerSummary(summary);
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Convenience overload — no borrower summary (used by older callers).
+     */
+    public LoanOfferResponse toResponse(LoanOffer o) {
+        return toResponse(o, false);
     }
 }

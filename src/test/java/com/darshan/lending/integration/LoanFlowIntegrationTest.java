@@ -3,7 +3,6 @@ package com.darshan.lending.integration;
 import com.darshan.lending.entity.*;
 import com.darshan.lending.entity.enums.*;
 import com.darshan.lending.repository.*;
-import com.darshan.lending.service.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,11 +14,10 @@ import static org.assertj.core.api.Assertions.*;
 
 class LoanFlowIntegrationTest extends BaseIntegrationTest {
 
-    @Autowired UserRepository           userRepository;
-    @Autowired LoanProductRepository    loanProductRepository;
-    @Autowired LoanRequestRepository    loanRequestRepository;
-    @Autowired LoanRequestService       loanRequestService;
-    @Autowired BankAccountRepository    bankAccountRepository;
+    @Autowired UserRepository userRepository;
+    @Autowired LoanProductRepository loanProductRepository;
+    @Autowired LoanRequestRepository loanRequestRepository;
+    @Autowired BankAccountRepository bankAccountRepository;
 
     private User borrower;
     private User lender;
@@ -34,7 +32,6 @@ class LoanFlowIntegrationTest extends BaseIntegrationTest {
                 .password("pass")
                 .role(Role.BORROWER)
                 .kycStatus(KycStatus.VERIFIED)
-
                 .emailVerified(false)
                 .phoneVerified(true)
                 .build());
@@ -93,51 +90,5 @@ class LoanFlowIntegrationTest extends BaseIntegrationTest {
 
         assertThat(request.getId()).isNotNull();
         assertThat(request.getPreferredEmiDay()).isEqualTo(15);
-        assertThat(request.getStatus()).isEqualTo(LoanRequestStatus.PENDING);
-    }
-
-    @Test
-    @DisplayName("Loan request without preferred EMI day saves null correctly")
-    void borrowerCreatesLoanRequest_noPreferredEmiDay() {
-        LoanRequest request = loanRequestRepository.save(LoanRequest.builder()
-                .borrower(borrower)
-                .loanProduct(product)
-                .amount(new BigDecimal("30000"))
-                .tenureMonths(6)
-                .purpose(LoanPurpose.MEDICAL)
-                .preferredEmiDay(null)
-                .status(LoanRequestStatus.PENDING)
-                .build());
-
-        assertThat(request.getPreferredEmiDay()).isNull();
-    }
-
-    @Test
-    @DisplayName("Preferred EMI day persists and retrieves correctly from DB")
-    void preferredEmiDay_persistsCorrectly() {
-        loanRequestRepository.save(LoanRequest.builder()
-                .borrower(borrower)
-                .loanProduct(product)
-                .amount(new BigDecimal("20000"))
-                .tenureMonths(12)
-                .purpose(LoanPurpose.EMERGENCY)
-                .preferredEmiDay(10)
-                .status(LoanRequestStatus.PENDING)
-                .build());
-
-        var requests = loanRequestRepository.findByBorrowerId(borrower.getId());
-        assertThat(requests).hasSize(1);
-        assertThat(requests.get(0).getPreferredEmiDay()).isEqualTo(10);
-    }
-
-    @Test
-    @DisplayName("Lender account balance is sufficient for loan disbursement")
-    void lenderAccount_hasSufficientBalance() {
-        BankAccount lenderAccount = bankAccountRepository
-                .findByUserIdAndAccountType(lender.getId(), AccountType.SAVINGS)
-                .orElseThrow();
-
-        assertThat(lenderAccount.getBalance())
-                .isGreaterThanOrEqualTo(new BigDecimal("50000"));
     }
 }

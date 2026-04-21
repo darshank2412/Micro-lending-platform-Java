@@ -70,8 +70,8 @@ public class UserRegistrationRequest {
 
     @NotBlank(message = "Password is required")
     @Pattern(
-            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?`~])[^\\s]{8,}$",
-            message = "Password must be at least 8 characters, contain at least one uppercase letter, one lowercase letter, one digit, one special character, and no spaces"
+            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?`~])[^\\s]{8,18}$",
+            message = "Password must be at least 8 characters and upto 18 characters, contain at least one uppercase letter, one lowercase letter, one digit, one special character, and no spaces"
     )
     @Schema(
             example = "Secure@123",

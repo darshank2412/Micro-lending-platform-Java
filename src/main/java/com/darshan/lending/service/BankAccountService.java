@@ -25,13 +25,16 @@ import java.util.stream.Collectors;
 public class BankAccountService {
 
     private final BankAccountRepository bankAccountRepository;
-    private final UserService userService;
+    private final UserService           userService;
     private final SavingsProductService savingsProductService;
-    private final LoanProductService loanProductService;
+    private final LoanProductService    loanProductService;
+    private final AuditLogService       auditLogService;
+
+    // ── Open savings account ──────────────────────────────────────────────────
 
     @Transactional
     public BankAccountResponse openSavingsAccount(Long userId, Long savingsProductId) {
-        User user = userService.findUserById(userId);
+        User user             = userService.findUserById(userId);
         SavingsProduct product = savingsProductService.findById(savingsProductId);
 
         if (bankAccountRepository.findByUserIdAndAccountType(userId, AccountType.SAVINGS).isPresent()) {
@@ -48,13 +51,23 @@ public class BankAccountService {
                 .savingsProduct(product)
                 .build();
 
-        log.info("Savings account opened: {} userId={} productId={}", accountNumber, userId, savingsProductId);
-        return toResponse(bankAccountRepository.save(account));
+        BankAccount saved = bankAccountRepository.save(account);
+
+        // ── FIX 3: Reload so Hibernate fetches savingsProduct / loanProduct ───
+        BankAccount reloaded = bankAccountRepository.findById(saved.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Account not found after save: " + saved.getId()));
+
+        log.info("Savings account opened: {} userId={} productId={}",
+                accountNumber, userId, savingsProductId);
+        return toResponse(reloaded);
     }
+
+    // ── Open loan account ─────────────────────────────────────────────────────
 
     @Transactional
     public BankAccountResponse openLoanAccount(Long userId, Long loanProductId) {
-        User user = userService.findUserById(userId);
+        User user           = userService.findUserById(userId);
         LoanProduct product = loanProductService.findById(loanProductId);
 
         if (bankAccountRepository.findByUserIdAndAccountType(userId, AccountType.LOAN).isPresent()) {
@@ -71,9 +84,19 @@ public class BankAccountService {
                 .loanProduct(product)
                 .build();
 
-        log.info("Loan account opened: {} userId={} productId={}", accountNumber, userId, loanProductId);
-        return toResponse(bankAccountRepository.save(account));
+        BankAccount saved = bankAccountRepository.save(account);
+
+        // ── FIX 3: Reload so Hibernate fetches loanProduct ───────────────────
+        BankAccount reloaded = bankAccountRepository.findById(saved.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Account not found after save: " + saved.getId()));
+
+        log.info("Loan account opened: {} userId={} productId={}",
+                accountNumber, userId, loanProductId);
+        return toResponse(reloaded);
     }
+
+    // ── Read ──────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public List<BankAccountResponse> getAccountsByUser(Long userId) {
@@ -86,6 +109,17 @@ public class BankAccountService {
         return toResponse(findById(accountId));
     }
 
+    @Transactional(readOnly = true)
+    public BankAccountResponse getSavingsAccount(Long userId) {
+        BankAccount account = bankAccountRepository
+                .findByUserIdAndAccountType(userId, AccountType.SAVINGS)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No savings account for user: " + userId));
+        return toResponse(account);
+    }
+
+    // ── Deposit ───────────────────────────────────────────────────────────────
+
     @Transactional
     public BankAccountResponse deposit(Long accountId, BigDecimal amount) {
         BankAccount account = findById(accountId);
@@ -95,10 +129,28 @@ public class BankAccountService {
         if (account.getStatus() != AccountStatus.ACTIVE) {
             throw new BusinessException("Account is not active: " + account.getStatus());
         }
+
         account.setBalance(account.getBalance().add(amount));
-        log.info("Deposit: accountId={} amount={} newBalance={}", accountId, amount, account.getBalance());
-        return toResponse(bankAccountRepository.save(account));
+        BankAccount saved = bankAccountRepository.save(account);
+
+        log.info("Deposit: accountId={} amount={} newBalance={}",
+                accountId, amount, saved.getBalance());
+
+        auditLogService.log(
+                account.getUser().getId(),
+                account.getUser().getRole().name(),
+                account.getUser().getFullName(),
+                AuditLogService.ACTION_DEPOSIT,
+                AuditLogService.RESOURCE_ACCOUNT,
+                accountId,
+                "Amount: " + amount + " | New balance: " + saved.getBalance(),
+                "SUCCESS"
+        );
+
+        return toResponse(saved);
     }
+
+    // ── Withdraw ──────────────────────────────────────────────────────────────
 
     @Transactional
     public BankAccountResponse withdraw(Long accountId, BigDecimal amount) {
@@ -110,16 +162,36 @@ public class BankAccountService {
             throw new BusinessException("Account is not active: " + account.getStatus());
         }
         if (account.getBalance().compareTo(amount) < 0) {
-            throw new BusinessException("Insufficient balance. Available: " + account.getBalance());
+            throw new BusinessException(
+                    "Insufficient balance. Available: " + account.getBalance());
         }
+
         account.setBalance(account.getBalance().subtract(amount));
-        log.info("Withdrawal: accountId={} amount={} newBalance={}", accountId, amount, account.getBalance());
-        return toResponse(bankAccountRepository.save(account));
+        BankAccount saved = bankAccountRepository.save(account);
+
+        log.info("Withdrawal: accountId={} amount={} newBalance={}",
+                accountId, amount, saved.getBalance());
+
+        auditLogService.log(
+                account.getUser().getId(),
+                account.getUser().getRole().name(),
+                account.getUser().getFullName(),
+                AuditLogService.ACTION_WITHDRAWAL,
+                AuditLogService.RESOURCE_ACCOUNT,
+                accountId,
+                "Amount: " + amount + " | New balance: " + saved.getBalance(),
+                "SUCCESS"
+        );
+
+        return toResponse(saved);
     }
+
+    // ── Internal helpers ──────────────────────────────────────────────────────
 
     public BankAccount findById(Long accountId) {
         return bankAccountRepository.findById(accountId)
-                .orElseThrow(() -> new ResourceNotFoundException("Account not found: " + accountId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Account not found: " + accountId));
     }
 
     private BankAccountResponse toResponse(BankAccount a) {
@@ -130,10 +202,14 @@ public class BankAccountService {
                 .balance(a.getBalance())
                 .status(a.getStatus())
                 .userId(a.getUser().getId())
-                .savingsProductId(a.getSavingsProduct() != null ? a.getSavingsProduct().getId() : null)
-                .savingsProductName(a.getSavingsProduct() != null ? a.getSavingsProduct().getName() : null)
-                .loanProductId(a.getLoanProduct() != null ? a.getLoanProduct().getId() : null)
-                .loanProductName(a.getLoanProduct() != null ? a.getLoanProduct().getName() : null)
+                .savingsProductId(a.getSavingsProduct() != null
+                        ? a.getSavingsProduct().getId() : null)
+                .savingsProductName(a.getSavingsProduct() != null
+                        ? a.getSavingsProduct().getName() : null)
+                .loanProductId(a.getLoanProduct() != null
+                        ? a.getLoanProduct().getId() : null)
+                .loanProductName(a.getLoanProduct() != null
+                        ? a.getLoanProduct().getName() : null)
                 .createdAt(a.getCreatedAt())
                 .build();
     }

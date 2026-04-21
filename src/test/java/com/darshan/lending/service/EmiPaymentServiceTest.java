@@ -30,7 +30,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT) // Add this to make stubbings lenient
+@MockitoSettings(strictness = Strictness.LENIENT)
 class EmiPaymentServiceTest {
 
     @Mock LoanSummaryRepository   loanSummaryRepository;
@@ -38,6 +38,7 @@ class EmiPaymentServiceTest {
     @Mock BankAccountRepository   bankAccountRepository;
     @Mock LoanDisbursementService loanDisbursementService;
     @Mock LoanRepaymentConfig     repaymentConfig;
+    @Mock AuditLogService         auditLogService;
 
     @InjectMocks EmiPaymentService service;
 
@@ -108,6 +109,32 @@ class EmiPaymentServiceTest {
                 .build();
     }
 
+    // ── Shared mock helper ────────────────────────────────────────────────────
+
+    /**
+     * Configures loanDisbursementService.toEmiResponse() to propagate the
+     * message field from the EmiSchedule entity into the response DTO.
+     *
+     * WHY THIS EXISTS:
+     * The service calls currentEmi.setMessage(...) and then passes currentEmi
+     * to toEmiResponse(). The real mapper copies that message into the DTO.
+     * Using a flat thenReturn(mockResponse) ignores the argument entirely,
+     * so result.getMessage() is always null — causing the partial-payment
+     * test to fail at "Expecting actual not to be null".
+     * thenAnswer inspects the actual argument and mirrors what the real
+     * mapper does, making assertions on getMessage() reliable.
+     */
+    private void stubToEmiResponseWithMessage() {
+        when(loanDisbursementService.toEmiResponse(any())).thenAnswer(invocation -> {
+            EmiSchedule emi = invocation.getArgument(0);
+            return EmiScheduleResponse.builder()
+                    .emiNumber(emi.getEmiNumber())
+                    .emiAmount(emi.getEmiAmount())
+                    .message(emi.getMessage())   // ← carry message set by service
+                    .build();
+        });
+    }
+
     // ── payEmi ────────────────────────────────────────────────────────────────
 
     @Test
@@ -124,10 +151,7 @@ class EmiPaymentServiceTest {
                 .thenReturn(Optional.of(lenderAccount));
         when(emiScheduleRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(loanSummaryRepository.save(any())).thenReturn(activeLoan);
-
-        EmiScheduleResponse mockResponse = EmiScheduleResponse.builder()
-                .emiNumber(1).emiAmount(new BigDecimal("4442.44")).build();
-        when(loanDisbursementService.toEmiResponse(any())).thenReturn(mockResponse);
+        stubToEmiResponseWithMessage();
 
         EmiScheduleResponse result = service.payEmi(10L, 1L, new BigDecimal("4442.44"));
 
@@ -137,7 +161,7 @@ class EmiPaymentServiceTest {
     }
 
     @Test
-    @DisplayName("payEmi: partial payment → EMI marked PARTIAL, shortfall added to next")
+    @DisplayName("payEmi: partial payment → EMI marked PARTIAL, shortfall tracked on EMI")
     void payEmi_partialPayment_shortfallAddedToNext() {
         when(loanSummaryRepository.findById(10L)).thenReturn(Optional.of(activeLoan));
         when(emiScheduleRepository.findPendingOrOverdueEmis(10L)).thenReturn(List.of(emi1, emi2));
@@ -151,12 +175,14 @@ class EmiPaymentServiceTest {
         when(emiScheduleRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(loanSummaryRepository.save(any())).thenReturn(activeLoan);
 
-        EmiScheduleResponse mockResponse = EmiScheduleResponse.builder()
-                .emiNumber(1).emiAmount(new BigDecimal("4442.44")).build();
-        when(loanDisbursementService.toEmiResponse(any())).thenReturn(mockResponse);
+        // FIX: thenAnswer propagates emi.getMessage() so result.getMessage() is not null.
+        // Previously thenReturn(hardcodedResponse) discarded the message the service set,
+        // causing "Expecting actual not to be null" at line 162.
+        stubToEmiResponseWithMessage();
 
         EmiScheduleResponse result = service.payEmi(10L, 1L, new BigDecimal("2000"));
 
+        assertThat(result).isNotNull();
         assertThat(emi1.getStatus()).isEqualTo(EmiStatus.PARTIAL);
         assertThat(result.getMessage()).contains("Partial payment accepted");
     }
@@ -175,10 +201,7 @@ class EmiPaymentServiceTest {
                 .thenReturn(Optional.of(lenderAccount));
         when(emiScheduleRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(loanSummaryRepository.save(any())).thenReturn(activeLoan);
-
-        EmiScheduleResponse mockResponse = EmiScheduleResponse.builder()
-                .emiNumber(1).emiAmount(new BigDecimal("4442.44")).build();
-        when(loanDisbursementService.toEmiResponse(any())).thenReturn(mockResponse);
+        stubToEmiResponseWithMessage();
 
         BigDecimal originalEmi2Amount = emi2.getEmiAmount();
         service.payEmi(10L, 1L, new BigDecimal("6000"));
@@ -213,9 +236,7 @@ class EmiPaymentServiceTest {
                 .thenReturn(Optional.of(lenderAccount));
         when(emiScheduleRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(loanSummaryRepository.save(any())).thenReturn(activeLoan);
-
-        EmiScheduleResponse mockResponse = EmiScheduleResponse.builder().build();
-        when(loanDisbursementService.toEmiResponse(any())).thenReturn(mockResponse);
+        stubToEmiResponseWithMessage();
 
         service.payEmi(10L, 1L, new BigDecimal("4442.44"));
 
@@ -310,9 +331,7 @@ class EmiPaymentServiceTest {
                 .thenReturn(Optional.of(lenderAccount));
         when(emiScheduleRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(loanSummaryRepository.save(any())).thenReturn(activeLoan);
-
-        EmiScheduleResponse mockResponse = EmiScheduleResponse.builder().build();
-        when(loanDisbursementService.toEmiResponse(any())).thenReturn(mockResponse);
+        stubToEmiResponseWithMessage();
 
         service.payEmi(10L, 1L, new BigDecimal("20000"));
 

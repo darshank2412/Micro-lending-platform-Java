@@ -25,6 +25,8 @@ public interface LoanRequestRepository extends JpaRepository<LoanRequest, Long> 
     // Check if borrower already has a pending request
     boolean existsByBorrowerIdAndStatus(Long borrowerId, LoanRequestStatus status);
 
+    long countByStatus(LoanRequestStatus status);
+
     // Pending requests filtered by lender preference ranges
     @Query("SELECT r FROM LoanRequest r WHERE r.status = 'PENDING' " +
             "AND r.amount >= :minAmount AND r.amount <= :maxAmount " +

@@ -30,6 +30,7 @@ class LoanRequestServiceTest {
     @Mock UserRepository             userRepository;
     @Mock LoanProductRepository      loanProductRepository;
     @Mock LenderPreferenceRepository lenderPreferenceRepository;
+    @Mock AuditLogService         auditLogService;
 
     @InjectMocks LoanRequestService service;
 

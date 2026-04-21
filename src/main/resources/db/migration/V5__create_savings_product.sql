@@ -6,7 +6,7 @@ CREATE TABLE savings_product (
                                  interest_rate NUMERIC(5,2)   NOT NULL,
                                  status        VARCHAR(10)    NOT NULL DEFAULT 'ACTIVE'
                                      CHECK (status IN ('ACTIVE','INACTIVE')),
-                                 created_at    TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  r               created_at    TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
                                  CONSTRAINT chk_savings_balance_range CHECK (min_balance < max_balance),
                                  CONSTRAINT chk_savings_interest      CHECK (interest_rate >= 0 AND interest_rate <= 20)

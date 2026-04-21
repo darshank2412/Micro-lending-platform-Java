@@ -39,6 +39,7 @@ class LoanDisbursementServiceTest {
     @Mock UserRepository         userRepository;
     @Mock EmiCalculator          emiCalculator;
     @Mock LenderPreferenceRepository lenderPreferenceRepository;
+    @Mock AuditLogService         auditLogService;
 
     @InjectMocks LoanDisbursementService service;
 

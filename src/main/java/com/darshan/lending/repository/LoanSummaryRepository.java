@@ -42,6 +42,11 @@ public interface LoanSummaryRepository extends JpaRepository<LoanSummary, Long> 
      * Bulk mark ACTIVE loans as DEFAULTED when they have at least one OVERDUE EMI.
      * Single JOIN query — avoids the N+1 loop in the original scheduler.
      */
+
+
+    long countByStatus(LoanStatus status);
+
+
     @Modifying
     @Query("UPDATE LoanSummary ls SET ls.status = :newStatus " +
             "WHERE ls.status = :currentStatus " +

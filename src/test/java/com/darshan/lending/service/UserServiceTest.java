@@ -127,7 +127,8 @@ class UserServiceTest {
     @DisplayName("updateProfile: updates fullName, email, gender")
     void updateProfile_updatesFields() {
         mobileVerifiedUser.setStatus(UserStatus.PLATFORM_ACCOUNT_CREATED);
-        when(userRepository.findById(1L)).thenReturn(Optional.of(mobileVerifiedUser));
+        when(userRepository.findByPhoneNumber("9876543210"))
+                .thenReturn(Optional.of(mobileVerifiedUser));
         when(userRepository.save(any())).thenAnswer(i -> i.getArgument(0));
         when(bankAccountRepository.findByUserIdAndAccountType(anyLong(), any()))
                 .thenReturn(Optional.empty());
@@ -138,7 +139,7 @@ class UserServiceTest {
                 .gender(Gender.FEMALE)
                 .build();
 
-        UserResponse response = service.updateProfile(1L, req);
+        UserResponse response = service.updateProfileByPhone("9876543210", req);
 
         assertThat(mobileVerifiedUser.getFullName()).isEqualTo("Alice Updated");
         assertThat(mobileVerifiedUser.getEmail()).isEqualTo("newalice@example.com");
@@ -181,7 +182,6 @@ class UserServiceTest {
         when(userRepository.existsByPhoneNumber("9111111111")).thenReturn(false);
         when(userRepository.existsByEmail("admin@lending.com")).thenReturn(false);
         when(passwordEncoder.encode(any())).thenReturn("encoded");
-        // Return a user WITH an id so toResponse() can call findByUserIdAndAccountType(id, SAVINGS)
         when(userRepository.save(any())).thenAnswer(i -> {
             User u = i.getArgument(0);
             u.setId(100L);
@@ -272,7 +272,7 @@ class UserServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
-    // ── getAllAdmins ───────────────────────────────────────────────────────────
+    // ── getAllAdmins ──────────────────────────────────────────────────────────
 
     @Test
     @DisplayName("getAllAdmins: returns list of all admins")

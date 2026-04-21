@@ -1,17 +1,19 @@
- package com.darshan.lending.integration;
+package com.darshan.lending.integration;
 
- import com.darshan.lending.entity.User;
- import com.darshan.lending.entity.enums.*;
- import com.darshan.lending.repository.UserRepository;
- import org.junit.jupiter.api.DisplayName;
- import org.junit.jupiter.api.Test;
- import org.springframework.beans.factory.annotation.Autowired;
+import com.darshan.lending.entity.User;
+import com.darshan.lending.entity.enums.KycStatus;
+import com.darshan.lending.entity.enums.Role;
+import com.darshan.lending.repository.UserRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
- import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.*;
 
- class AuthIntegrationTest extends BaseIntegrationTest {
+class AuthIntegrationTest extends BaseIntegrationTest {
 
-    @Autowired UserRepository userRepository;
+    @Autowired
+    private UserRepository userRepository;
 
     @Test
     @DisplayName("User saves and retrieves correctly from DB")
@@ -23,12 +25,12 @@
                 .password("password123")
                 .role(Role.BORROWER)
                 .kycStatus(KycStatus.PENDING)
-
                 .emailVerified(false)
                 .phoneVerified(true)
                 .build());
 
         User found = userRepository.findById(user.getId()).orElseThrow();
+
         assertThat(found.getFullName()).isEqualTo("Test User");
         assertThat(found.getRole()).isEqualTo(Role.BORROWER);
         assertThat(found.getKycStatus()).isEqualTo(KycStatus.PENDING);
@@ -44,7 +46,6 @@
                 .password("pass")
                 .role(Role.LENDER)
                 .kycStatus(KycStatus.VERIFIED)
-
                 .emailVerified(false)
                 .phoneVerified(true)
                 .build());
@@ -63,12 +64,12 @@
                 .password("pass")
                 .role(Role.BORROWER)
                 .kycStatus(KycStatus.PENDING)
-
                 .emailVerified(false)
                 .phoneVerified(true)
                 .build());
 
         User found = userRepository.findByPhoneNumber("9900000003").orElseThrow();
+
         assertThat(found.getFullName()).isEqualTo("Mobile Test");
     }
 }

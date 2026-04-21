@@ -23,31 +23,24 @@ public class EmiSchedule {
             foreignKey = @ForeignKey(name = "fk_emi_loan_summary"))
     private LoanSummary loanSummary;
 
-    /** EMI number — 1 to tenureMonths */
     @Column(name = "emi_number", nullable = false)
     private Integer emiNumber;
 
-    /** Date this EMI is due */
     @Column(name = "due_date", nullable = false)
     private LocalDate dueDate;
 
-    /** Date this EMI was actually paid */
     @Column(name = "paid_date")
     private LocalDate paidDate;
 
-    /** Total EMI amount = principal component + interest component */
     @Column(name = "emi_amount", nullable = false, precision = 15, scale = 2)
     private BigDecimal emiAmount;
 
-    /** Principal portion of this EMI */
     @Column(name = "principal_component", nullable = false, precision = 15, scale = 2)
     private BigDecimal principalComponent;
 
-    /** Interest portion of this EMI */
     @Column(name = "interest_component", nullable = false, precision = 15, scale = 2)
     private BigDecimal interestComponent;
 
-    /** Outstanding principal after this EMI is paid */
     @Column(name = "outstanding_principal", nullable = false, precision = 15, scale = 2)
     private BigDecimal outstandingPrincipal;
 
@@ -62,4 +55,16 @@ public class EmiSchedule {
 
     @Column(name = "paid_amount", precision = 15, scale = 2)
     private BigDecimal paidAmount;
+
+    @Column(name = "penalty_amount", precision = 15, scale = 2)
+    private BigDecimal penaltyAmount;
+
+    @Column(name = "total_paid", precision = 15, scale = 2)
+    private BigDecimal totalPaid;
+
+    @Column(name = "shortfall", precision = 15, scale = 2)
+    private BigDecimal shortfall;
+
+    @Column(name = "message", length = 255)
+    private String message;
 }

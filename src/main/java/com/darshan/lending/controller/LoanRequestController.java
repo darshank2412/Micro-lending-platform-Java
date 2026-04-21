@@ -6,7 +6,6 @@ import com.darshan.lending.dto.LoanRequestResponse;
 import com.darshan.lending.entity.enums.LoanRequestStatus;
 import com.darshan.lending.service.LoanRequestService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,11 +15,26 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * REMOVAL — Two endpoints have been removed from this controller:
+ *
+ *   ✗  PATCH /{requestId}/accept   (LENDER)
+ *      Removed because the system uses auto-matchmaking via LenderPreferences.
+ *      The lender's acceptance is implicit in their saved preferences.
+ *      Flow: Admin triggers matchmaking → LoanOffers created → Borrower accepts → Admin disburses.
+ *
+ *   ✗  PATCH /{requestId}/match    (ADMIN)
+ *      Removed because it only flipped the status to MATCHED without running
+ *      any matching logic — a meaningless manual override.
+ *      Use POST /{requestId}/trigger-match instead, which both runs the engine
+ *      AND transitions the status correctly.
+ *
+ * Everything else below is unchanged from your original controller.
+ */
 @RestController
 @RequestMapping("/loan-requests")
 @RequiredArgsConstructor
-@Tag(name = "09.Loan Request APIs", description = "Borrower submits loan requests; Lender discovers and accepts")
-//@SecurityRequirement(name = "basicAuth")
+@Tag(name = "09.Loan Request APIs", description = "Borrower submits loan requests; Admin manages matchmaking")
 public class LoanRequestController {
 
     private final LoanRequestService loanRequestService;
@@ -75,14 +89,9 @@ public class LoanRequestController {
                 loanRequestService.getById(requestId)));
     }
 
-    @PatchMapping("/{requestId}/match")
-    @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "ADMIN — Mark loan request as matched")
-    public ResponseEntity<ApiResponse<LoanRequestResponse>> match(
-            @PathVariable Long requestId) {
-        return ResponseEntity.ok(ApiResponse.success("Loan request matched",
-                loanRequestService.markAsMatched(requestId)));
-    }
+    // ✗ REMOVED: PATCH /{requestId}/match
+    //   This was manually flipping status to MATCHED with no engine logic.
+    //   Use POST /{requestId}/trigger-match (in your matchmaking controller) instead.
 
     @PatchMapping("/{requestId}/reject")
     @PreAuthorize("hasRole('ADMIN')")
@@ -122,13 +131,8 @@ public class LoanRequestController {
                 loanRequestService.getAllRequests(LoanRequestStatus.MATCHED)));
     }
 
-    @PatchMapping("/{requestId}/accept")
-    @PreAuthorize("hasRole('LENDER')")
-    @Operation(summary = "LENDER — Accept a matched loan request")
-    public ResponseEntity<ApiResponse<LoanRequestResponse>> accept(
-            @PathVariable Long requestId,
-            @RequestParam Long lenderId) {
-        return ResponseEntity.ok(ApiResponse.success("Loan request accepted",
-                loanRequestService.acceptRequest(lenderId, requestId)));
-    }
+    // ✗ REMOVED: PATCH /{requestId}/accept (LENDER)
+    //   Removed because lender acceptance is already implicit in LenderPreferences.
+    //   The matchmaking engine selects lenders automatically. A separate accept
+    //   endpoint created a broken hybrid model. Borrowers accept via LoanOfferController.
 }

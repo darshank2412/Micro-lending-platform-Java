@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class LoanOfferResponse {
+
     private Long id;
     private Long loanRequestId;
     private BigDecimal loanAmount;
@@ -19,4 +20,11 @@ public class LoanOfferResponse {
     private String rejectionReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    /**
+     * ADDITION — Only populated when a LENDER calls GET /loan-offers/my.
+     * Gives the lender context about the borrower they are matched with.
+     * Null in all other responses.
+     */
+    private BorrowerSummary borrowerSummary;
 }

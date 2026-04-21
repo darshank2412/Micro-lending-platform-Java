@@ -52,7 +52,7 @@ public class User implements UserDetails {
     @Column(name = "full_name", length = 200)
     private String fullName;
 
-    @Column(name = "email")
+    @Column(name = "email" , unique = true, nullable = false)
     private String email;
 
 
